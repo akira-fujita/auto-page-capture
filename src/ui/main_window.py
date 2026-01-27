@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QRadioButton, QButtonGroup, QCheckBox, QLineEdit,
     QFileDialog, QProgressBar, QMessageBox, QGroupBox,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QRect
 from src.capture.window_manager import WindowManager, WindowInfo
 from src.capture.screenshot import Screenshot
 from src.capture.page_navigator import PageNavigator, Direction
@@ -31,6 +31,7 @@ class MainWindow(QMainWindow):
         self.current_page = 0
         self.total_pages = 0
         self.output_dir: Path | None = None
+        self.custom_region: QRect | None = None  # カスタム領域
 
         self._init_ui()
         self._refresh_windows()
@@ -54,6 +55,37 @@ class MainWindow(QMainWindow):
         window_layout.addWidget(self.window_combo)
         window_layout.addWidget(refresh_btn)
         layout.addWidget(window_group)
+
+        # キャプチャ領域
+        area_group = QGroupBox("キャプチャ領域")
+        area_layout = QVBoxLayout(area_group)
+
+        # 領域選択ラジオボタン
+        self.area_group = QButtonGroup()
+        self.window_area_radio = QRadioButton("ウィンドウ全体（タイトルバー除く）")
+        self.custom_area_radio = QRadioButton("カスタム領域")
+        self.window_area_radio.setChecked(True)
+        self.area_group.addButton(self.window_area_radio)
+        self.area_group.addButton(self.custom_area_radio)
+        area_layout.addWidget(self.window_area_radio)
+
+        # カスタム領域選択行
+        custom_layout = QHBoxLayout()
+        custom_layout.addWidget(self.custom_area_radio)
+        self.select_region_btn = QPushButton("領域を選択...")
+        self.select_region_btn.clicked.connect(self._select_region)
+        self.select_region_btn.setEnabled(False)
+        custom_layout.addWidget(self.select_region_btn)
+        self.region_info_label = QLabel("")
+        self.region_info_label.setStyleSheet("color: #666;")
+        custom_layout.addWidget(self.region_info_label)
+        custom_layout.addStretch()
+        area_layout.addLayout(custom_layout)
+
+        # ラジオボタン変更時の処理
+        self.custom_area_radio.toggled.connect(self._on_area_mode_changed)
+
+        layout.addWidget(area_group)
 
         # キャプチャ設定
         settings_group = QGroupBox("キャプチャ設定")
@@ -164,6 +196,41 @@ class MainWindow(QMainWindow):
         if path:
             self.path_edit.setText(path)
 
+    def _on_area_mode_changed(self, checked: bool):
+        """領域モードが変更された"""
+        self.select_region_btn.setEnabled(checked)
+        if not checked:
+            self.custom_region = None
+            self.region_info_label.setText("")
+
+    def _select_region(self):
+        """領域選択オーバーレイを表示"""
+        from src.ui.region_selector import RegionSelector
+
+        self.hide()  # メインウィンドウを一時的に隠す
+        QTimer.singleShot(200, self._show_region_selector)
+
+    def _show_region_selector(self):
+        """領域セレクターを表示"""
+        from src.ui.region_selector import RegionSelector
+
+        self.region_selector = RegionSelector()
+        self.region_selector.region_selected.connect(self._on_region_selected)
+        self.region_selector.selection_cancelled.connect(self._on_region_cancelled)
+        self.region_selector.show()
+
+    def _on_region_selected(self, rect: QRect):
+        """領域が選択された"""
+        self.custom_region = rect
+        self.region_info_label.setText(f"{rect.width()} x {rect.height()} px")
+        self.show()
+        self.activateWindow()
+
+    def _on_region_cancelled(self):
+        """領域選択がキャンセルされた"""
+        self.show()
+        self.activateWindow()
+
     def _toggle_capture(self):
         """キャプチャ開始/停止を切り替え"""
         if not self.is_capturing:
@@ -171,12 +238,18 @@ class MainWindow(QMainWindow):
 
     def _start_capture(self):
         """キャプチャを開始"""
-        if not self.windows:
+        # カスタム領域モードで領域未選択の場合
+        if self.custom_area_radio.isChecked() and not self.custom_region:
+            QMessageBox.warning(self, "エラー", "キャプチャ領域を選択してください")
+            return
+
+        # ウィンドウモードでウィンドウ未選択の場合
+        if self.window_area_radio.isChecked() and not self.windows:
             QMessageBox.warning(self, "エラー", "ウィンドウが選択されていません")
             return
 
         idx = self.window_combo.currentIndex()
-        if idx < 0:
+        if self.window_area_radio.isChecked() and idx < 0:
             return
 
         self.is_capturing = True
@@ -200,9 +273,10 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.warning_label.setVisible(True)
 
-        # ウィンドウをフォアグラウンドに
-        window = self.windows[idx]
-        self.window_manager.bring_to_front(window["pid"])
+        # ウィンドウモードの場合、ウィンドウをフォアグラウンドに
+        if self.window_area_radio.isChecked() and idx >= 0:
+            window = self.windows[idx]
+            self.window_manager.bring_to_front(window["pid"])
 
         # 少し待ってからキャプチャ開始
         QTimer.singleShot(500, self._capture_page)
@@ -213,14 +287,25 @@ class MainWindow(QMainWindow):
             self._finish_capture()
             return
 
-        idx = self.window_combo.currentIndex()
-        window = self.windows[idx]
-        bounds = self.window_manager.get_content_bounds(window["bounds"])
+        # キャプチャ領域を決定
+        if self.custom_area_radio.isChecked() and self.custom_region:
+            # カスタム領域を使用
+            x = self.custom_region.x()
+            y = self.custom_region.y()
+            width = self.custom_region.width()
+            height = self.custom_region.height()
+        else:
+            # ウィンドウのコンテンツ領域を使用
+            idx = self.window_combo.currentIndex()
+            window = self.windows[idx]
+            bounds = self.window_manager.get_content_bounds(window["bounds"])
+            x = bounds["x"]
+            y = bounds["y"]
+            width = bounds["width"]
+            height = bounds["height"]
 
         # スクリーンショット撮影
-        image = self.screenshot.capture_region(
-            bounds["x"], bounds["y"], bounds["width"], bounds["height"]
-        )
+        image = self.screenshot.capture_region(x, y, width, height)
 
         # 保存
         path = self.file_manager.get_image_path(self.output_dir, self.current_page + 1)
