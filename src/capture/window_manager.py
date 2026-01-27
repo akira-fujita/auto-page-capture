@@ -3,7 +3,7 @@
 
 from typing import TypedDict
 import Quartz
-from AppKit import NSWorkspace, NSRunningApplication
+from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 
 
 class WindowBounds(TypedDict):
@@ -78,6 +78,6 @@ class WindowManager:
         for app in apps:
             if app.processIdentifier() == pid:
                 return app.activateWithOptions_(
-                    NSRunningApplication.NSApplicationActivateIgnoringOtherApps
+                    NSApplicationActivateIgnoringOtherApps
                 )
         return False
