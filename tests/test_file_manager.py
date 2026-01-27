@@ -2,7 +2,7 @@
 import pytest
 import tempfile
 from pathlib import Path
-from datetime import date
+from datetime import datetime
 from src.export.file_manager import FileManager
 
 
@@ -15,13 +15,15 @@ def test_create_output_directory():
         assert "test_capture" in output_dir.name
 
 
-def test_output_directory_includes_date():
-    """出力ディレクトリ名に日付が含まれる"""
+def test_output_directory_includes_datetime():
+    """出力ディレクトリ名に日時が含まれる"""
     with tempfile.TemporaryDirectory() as tmpdir:
         fm = FileManager(base_path=Path(tmpdir))
         output_dir = fm.create_output_directory("capture")
-        today = date.today().strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
         assert today in output_dir.name
+        # 時刻部分も含まれていることを確認（形式: HHMMSS）
+        assert "_" in output_dir.name.replace(today, "")
 
 
 def test_get_image_path():

@@ -2,7 +2,7 @@
 """ファイル管理機能"""
 
 from pathlib import Path
-from datetime import date
+from datetime import datetime
 import shutil
 
 
@@ -13,9 +13,9 @@ class FileManager:
         self.base_path = base_path or Path.home() / "Desktop" / "captures"
 
     def create_output_directory(self, name: str) -> Path:
-        """日付付きの出力ディレクトリを作成"""
-        today = date.today().strftime("%Y-%m-%d")
-        dir_name = f"{today}_{name}"
+        """日時付きの出力ディレクトリを作成"""
+        now = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        dir_name = f"{now}_{name}"
         output_dir = self.base_path / dir_name
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
