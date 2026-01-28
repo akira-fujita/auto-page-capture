@@ -330,8 +330,16 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.warning_label.setVisible(False)
+        self.progress_bar.setVisible(False)
 
         if self.captured_images:
+            # デスクトップ通知
+            from src.utils.notification import send_notification
+            send_notification(
+                "Kindle Page Capture",
+                f"キャプチャ完了: {len(self.captured_images)}ページ"
+            )
+
             # 章分割ダイアログを表示
             from src.ui.chapter_dialog import ChapterDialog
             dialog = ChapterDialog(

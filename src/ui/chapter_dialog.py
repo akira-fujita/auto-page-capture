@@ -407,6 +407,13 @@ class ChapterDialog(QDialog):
                 f"PDFを出力しました。\n\n出力先: {self.output_dir}\n\nファイル:\n{file_list}"
             )
 
+            # デスクトップ通知
+            from src.utils.notification import send_notification
+            send_notification(
+                "Kindle Page Capture",
+                f"PDF出力完了: {len(exported_files)}ファイル"
+            )
+
             self.accept()
 
         except Exception as e:
