@@ -1,6 +1,7 @@
 # src/ui/chapter_dialog.py
 """章分割ダイアログUI"""
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from PyQt6.QtWidgets import (
@@ -413,6 +414,9 @@ class ChapterDialog(QDialog):
                 "Kindle Page Capture",
                 f"PDF出力完了: {len(exported_files)}ファイル"
             )
+
+            # 出力フォルダをFinderで開く
+            subprocess.Popen(["open", str(self.output_dir)])
 
             self.accept()
 
