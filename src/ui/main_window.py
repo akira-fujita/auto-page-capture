@@ -181,9 +181,14 @@ class MainWindow(QMainWindow):
         """ウィンドウ一覧を更新"""
         self.windows = self.window_manager.get_window_list()
         self.window_combo.clear()
-        for w in self.windows:
+        kindle_index = -1
+        for i, w in enumerate(self.windows):
             display = f"{w['owner']} - {w['name']}"
             self.window_combo.addItem(display)
+            if kindle_index < 0 and "Kindle" in w['owner']:
+                kindle_index = i
+        if kindle_index >= 0:
+            self.window_combo.setCurrentIndex(kindle_index)
 
     def _update_interval_label(self, value: int):
         """間隔ラベルを更新"""
