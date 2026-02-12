@@ -153,11 +153,11 @@ class MainWindow(QMainWindow):
         button_layout = QHBoxLayout()
         self.start_btn = QPushButton("キャプチャ開始")
         self.start_btn.clicked.connect(self._toggle_capture)
-        self.cancel_btn = QPushButton("キャンセル")
-        self.cancel_btn.clicked.connect(self._cancel_capture)
-        self.cancel_btn.setEnabled(False)
+        self.finish_btn = QPushButton("ここまでで完了")
+        self.finish_btn.clicked.connect(self._finish_early)
+        self.finish_btn.setEnabled(False)
         button_layout.addWidget(self.start_btn)
-        button_layout.addWidget(self.cancel_btn)
+        button_layout.addWidget(self.finish_btn)
         layout.addLayout(button_layout)
 
         # プログレスバー
@@ -272,7 +272,7 @@ class MainWindow(QMainWindow):
 
         # UI更新
         self.start_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(True)
+        self.finish_btn.setEnabled(True)
         self.progress_bar.setRange(0, self.total_pages)
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
         """キャプチャ完了処理"""
         self.is_capturing = False
         self.start_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
+        self.finish_btn.setEnabled(False)
         self.warning_label.setVisible(False)
         self.progress_bar.setVisible(False)
 
@@ -355,14 +355,7 @@ class MainWindow(QMainWindow):
             )
             dialog.exec()
 
-    def _cancel_capture(self):
-        """キャプチャをキャンセル"""
-        reply = QMessageBox.question(
-            self,
-            "確認",
-            "キャプチャを中止しますか？\n撮影済みの画像は保持されます。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.is_capturing = False
-            self._finish_capture()
+    def _finish_early(self):
+        """キャプチャをここまでで完了"""
+        self.is_capturing = False
+        self._finish_capture()
