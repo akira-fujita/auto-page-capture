@@ -28,10 +28,11 @@ class ThumbnailWidget(QFrame):
 
     clicked = pyqtSignal(int)
 
-    def __init__(self, image_path: Path, index: int, parent=None):
+    def __init__(self, image_path: Path | None, index: int, *, pixmap: QPixmap | None = None, parent=None):
         super().__init__(parent)
         self.index = index
         self.image_path = image_path
+        self._source_pixmap = pixmap
         self._is_chapter_start = False
 
         self._init_ui()
@@ -48,7 +49,10 @@ class ThumbnailWidget(QFrame):
 
         # サムネイル画像
         self.image_label = QLabel()
-        pixmap = QPixmap(str(self.image_path))
+        if self._source_pixmap is not None:
+            pixmap = self._source_pixmap
+        else:
+            pixmap = QPixmap(str(self.image_path))
         scaled = pixmap.scaled(
             100, 140,
             Qt.AspectRatioMode.KeepAspectRatio,

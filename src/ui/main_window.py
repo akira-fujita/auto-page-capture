@@ -149,6 +149,14 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(output_group)
 
+        # ツール
+        tool_group = QGroupBox("ツール")
+        tool_layout = QHBoxLayout(tool_group)
+        pdf_split_btn = QPushButton("既存PDFを分割...")
+        pdf_split_btn.clicked.connect(self._open_pdf_split)
+        tool_layout.addWidget(pdf_split_btn)
+        layout.addWidget(tool_group)
+
         # ボタン
         button_layout = QHBoxLayout()
         self.start_btn = QPushButton("キャプチャ開始")
@@ -321,6 +329,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(self.current_page)
 
         if self.current_page < self.total_pages:
+            # 対象ウィンドウを再度フォアグラウンドに（フォーカスずれ対策）
+            if self.window_area_radio.isChecked():
+                idx = self.window_combo.currentIndex()
+                if idx >= 0:
+                    self.window_manager.bring_to_front(self.windows[idx]["pid"])
             # ページ送り
             self.page_navigator.next_page()
             # 次のキャプチャをスケジュール
@@ -359,3 +372,13 @@ class MainWindow(QMainWindow):
         """キャプチャをここまでで完了"""
         self.is_capturing = False
         self._finish_capture()
+
+    def _open_pdf_split(self):
+        """既存PDFを開いて分割ダイアログを表示"""
+        pdf_path, _ = QFileDialog.getOpenFileName(
+            self, "分割するPDFを選択", "", "PDF Files (*.pdf)"
+        )
+        if pdf_path:
+            from src.ui.pdf_split_dialog import PdfSplitDialog
+            dialog = PdfSplitDialog(Path(pdf_path), self)
+            dialog.exec()
