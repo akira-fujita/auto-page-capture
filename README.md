@@ -12,6 +12,7 @@ A macOS desktop tool that automatically captures Kindle app pages and converts t
 - **カスタム領域選択** / **Custom region selection** — ドラッグで任意のキャプチャ領域を指定（マルチモニター対応） / Drag to select any screen region (multi-monitor support)
 - **章分割** / **Chapter splitting** — サムネイル一覧から章の区切りを設定（NotebookLMでの要約に便利） / Set chapter boundaries from thumbnail preview (useful for summarization with NotebookLM)
 - **PDF出力** / **PDF export** — 全ページ結合 or 章ごとに分割してPDF出力 / Export as a single merged PDF or split by chapter
+- **既存PDF分割** / **PDF splitting** — 既存のPDFファイルを章ごとに分割（開始ページ指定・サムネイルプレビュー付き） / Split existing PDF files into chapters with start page configuration and thumbnail preview
 - **デスクトップ通知** / **Desktop notifications** — キャプチャ完了・PDF出力完了時にmacOS通知 / Notifies on capture and export completion
 
 ## 必要環境 / Requirements
@@ -38,6 +39,7 @@ pip install -r requirements.txt
 | pyautogui | スクリーンショット・キー送信 / Screenshot & key input |
 | Pillow | 画像処理 / Image processing |
 | img2pdf | PDF生成 / PDF generation |
+| pypdf | PDF分割 / PDF splitting |
 | pyobjc-framework-Quartz | macOSウィンドウ管理 / macOS window management |
 | pyobjc-framework-Cocoa | macOSアプリ制御 / macOS app control |
 
@@ -56,6 +58,13 @@ python main.py
 4. **章分割（任意）** / **Split chapters (optional)** — キャプチャ完了後、サムネイルをクリックして章を区切る / After capture, click thumbnails to mark chapter boundaries
 5. **PDF出力** / **Export PDF** — 全ページ結合 or 章ごとのPDFを出力 / Export as merged or per-chapter PDFs
 
+### 既存PDFの分割 / Splitting existing PDFs
+
+1. **ツール > 既存PDFを分割...** をクリック / Click **Tools > "既存PDFを分割..."**
+2. PDFファイルを選択 / Select a PDF file
+3. 章ごとに名前と開始ページを設定 / Set chapter names and start pages
+4. 出力先フォルダを指定して「分割実行」 / Choose output folder and click "分割実行"
+
 ### 注意事項 / Notes
 
 - キャプチャ中は対象ウィンドウを動かさないでください / Do not move the target window during capture
@@ -73,10 +82,12 @@ auto-page-capture/
 │   │   └── page_navigator.py        # ページ送り / Page navigation
 │   ├── export/
 │   │   ├── file_manager.py          # ファイル管理 / File management
-│   │   └── pdf_generator.py         # PDF生成 / PDF generation
+│   │   ├── pdf_generator.py         # PDF生成 / PDF generation
+│   │   └── pdf_splitter.py          # PDF分割 / PDF splitting
 │   ├── ui/
 │   │   ├── main_window.py           # メインウィンドウ / Main window
 │   │   ├── chapter_dialog.py        # 章分割ダイアログ / Chapter splitting dialog
+│   │   ├── pdf_split_dialog.py      # PDF分割ダイアログ / PDF split dialog
 │   │   └── region_selector.py       # 領域選択オーバーレイ / Region selection overlay
 │   └── utils/
 │       └── notification.py          # デスクトップ通知 / Desktop notifications
