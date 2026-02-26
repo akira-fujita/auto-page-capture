@@ -36,7 +36,7 @@ if [ ! -f "$DIR/main.py" ]; then
     exit 1
 fi
 cd "$DIR"
-exec "$DIR/venv/bin/python" "$DIR/main.py"
+exec arch -arm64 "$DIR/venv/bin/python" "$DIR/main.py"
 LAUNCH_EOF
 chmod +x "$MACOS_DIR/launch"
 
