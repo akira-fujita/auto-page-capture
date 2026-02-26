@@ -28,8 +28,9 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cat > "$MACOS_DIR/launch" << 'LAUNCH_EOF'
 #!/bin/bash
 # KindleCapture launcher
-# .app/Contents/MacOS/launch → プロジェクトルートは3階層上
-DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+# .app/Contents/MacOS/launch → プロジェクトルートは4階層上
+# dist/KindleCapture.app/Contents/MacOS/launch
+DIR="$(cd "$(dirname "$0")/../../../.." && pwd)"
 if [ ! -f "$DIR/main.py" ]; then
     osascript -e 'display dialog "KindleCapture.app はプロジェクトフォルダ内の dist/ に配置してください。" buttons {"OK"} default button "OK" with icon stop'
     exit 1

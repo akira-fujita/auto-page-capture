@@ -47,6 +47,7 @@ assert "Info.plist に CFBundleIdentifier がある" "grep -q 'com.local.kindle-
 # launch スクリプトの内容
 assert "launch が venv/bin/python を参照している" "grep -q 'venv/bin/python' '$APP_DIR/Contents/MacOS/launch'"
 assert "launch が main.py を参照している" "grep -q 'main.py' '$APP_DIR/Contents/MacOS/launch'"
+assert "launch が4階層上を参照している" "grep -q '\.\./\.\./\.\./\.\.' '$APP_DIR/Contents/MacOS/launch'"
 
 # クリーンアップ
 rm -rf "$DIST_DIR"
