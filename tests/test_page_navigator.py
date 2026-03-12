@@ -8,6 +8,8 @@ def test_direction_enum():
     """方向の列挙型が正しく定義されている"""
     assert Direction.RIGHT.value == "right"
     assert Direction.LEFT.value == "left"
+    assert Direction.UP.value == "pageup"
+    assert Direction.DOWN.value == "pagedown"
 
 
 @patch("src.capture.page_navigator.pyautogui")
@@ -24,3 +26,28 @@ def test_next_page_left_direction(mock_pyautogui):
     nav = PageNavigator(direction=Direction.LEFT)
     nav.next_page()
     mock_pyautogui.press.assert_called_once_with("left")
+
+
+@patch("src.capture.page_navigator.pyautogui")
+def test_next_page_up_direction(mock_pyautogui):
+    """上方向でnext_pageがpageupキーを送信する"""
+    nav = PageNavigator(direction=Direction.UP)
+    nav.next_page()
+    mock_pyautogui.press.assert_called_once_with("pageup")
+
+
+@patch("src.capture.page_navigator.pyautogui")
+def test_next_page_down_direction(mock_pyautogui):
+    """下方向でnext_pageがpagedownキーを送信する"""
+    nav = PageNavigator(direction=Direction.DOWN)
+    nav.next_page()
+    mock_pyautogui.press.assert_called_once_with("pagedown")
+
+
+@patch("src.capture.page_navigator.pyautogui")
+def test_set_direction_changes_key(mock_pyautogui):
+    """set_directionで方向を変更するとnext_pageのキーが変わる"""
+    nav = PageNavigator(direction=Direction.RIGHT)
+    nav.set_direction(Direction.UP)
+    nav.next_page()
+    mock_pyautogui.press.assert_called_once_with("pageup")

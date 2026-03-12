@@ -9,6 +9,8 @@ class Direction(Enum):
     """ページ送りの方向"""
     RIGHT = "right"
     LEFT = "left"
+    UP = "pageup"
+    DOWN = "pagedown"
 
 
 class PageNavigator:
