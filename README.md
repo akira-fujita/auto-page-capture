@@ -45,10 +45,30 @@ pip install -r requirements.txt
 
 ## 使い方 / Usage
 
+### ターミナルから起動 / Launch from terminal
+
 ```bash
 source venv/bin/activate
 python main.py
 ```
+
+### macOSアプリとして起動 / Launch as macOS app
+
+アイコンクリックで起動できる `.app` バンドルを生成できます。
+You can build a `.app` bundle to launch by clicking an icon.
+
+```bash
+bash scripts/build_app.sh
+```
+
+1. `dist/KindleCapture.app` が生成されます / `dist/KindleCapture.app` will be created
+2. Dock にドラッグしてピン留め / Drag to Dock to pin it
+3. アイコンをクリックして起動 / Click the icon to launch
+4. ソースコードを変更すれば即反映 / Source code changes take effect immediately
+
+**カスタムアイコン / Custom icon:**
+`resources/app.png`（1024x1024推奨）または `resources/app.icns` を配置してからビルドしてください。
+Place `resources/app.png` (1024x1024 recommended) or `resources/app.icns` before building.
 
 ### 基本的な手順 / Basic steps
 
@@ -75,6 +95,9 @@ python main.py
 ```
 auto-page-capture/
 ├── main.py                          # エントリーポイント / Entry point
+├── scripts/
+│   └── build_app.sh                 # .app ビルドスクリプト / .app build script
+├── resources/                       # アプリアイコン / App icon (app.png or app.icns)
 ├── src/
 │   ├── capture/
 │   │   ├── window_manager.py        # macOSウィンドウ管理 / Window management

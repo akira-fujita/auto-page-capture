@@ -108,11 +108,17 @@ class MainWindow(QMainWindow):
         self.direction_group = QButtonGroup()
         self.right_radio = QRadioButton("→ 右")
         self.left_radio = QRadioButton("← 左")
+        self.up_radio = QRadioButton("↑ 上")
+        self.down_radio = QRadioButton("↓ 下")
         self.right_radio.setChecked(True)
         self.direction_group.addButton(self.right_radio)
         self.direction_group.addButton(self.left_radio)
+        self.direction_group.addButton(self.up_radio)
+        self.direction_group.addButton(self.down_radio)
         direction_layout.addWidget(self.right_radio)
         direction_layout.addWidget(self.left_radio)
+        direction_layout.addWidget(self.up_radio)
+        direction_layout.addWidget(self.down_radio)
         direction_layout.addStretch()
         settings_layout.addLayout(direction_layout)
 
@@ -244,6 +250,16 @@ class MainWindow(QMainWindow):
         self.show()
         self.activateWindow()
 
+    def _get_selected_direction(self) -> Direction:
+        """選択中のページ送り方向を返す"""
+        if self.left_radio.isChecked():
+            return Direction.LEFT
+        if self.up_radio.isChecked():
+            return Direction.UP
+        if self.down_radio.isChecked():
+            return Direction.DOWN
+        return Direction.RIGHT
+
     def _toggle_capture(self):
         """キャプチャ開始/停止を切り替え"""
         if not self.is_capturing:
@@ -271,8 +287,7 @@ class MainWindow(QMainWindow):
         self.captured_images = []
 
         # 方向を設定
-        direction = Direction.RIGHT if self.right_radio.isChecked() else Direction.LEFT
-        self.page_navigator.set_direction(direction)
+        self.page_navigator.set_direction(self._get_selected_direction())
 
         # 出力ディレクトリを作成
         self.file_manager.base_path = Path(self.path_edit.text())
@@ -286,10 +301,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.warning_label.setVisible(True)
 
-        # ウィンドウモードの場合、ウィンドウをフォアグラウンドに
-        if self.window_area_radio.isChecked() and idx >= 0:
-            window = self.windows[idx]
-            self.window_manager.bring_to_front(window["pid"])
+        # 対象ウィンドウをフォアグラウンドに
+        self._bring_target_to_front()
 
         # 少し待ってからキャプチャ開始
         QTimer.singleShot(500, self._capture_page)
@@ -329,18 +342,26 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(self.current_page)
 
         if self.current_page < self.total_pages:
-            # 対象ウィンドウを再度フォアグラウンドに（フォーカスずれ対策）
-            if self.window_area_radio.isChecked():
-                idx = self.window_combo.currentIndex()
-                if idx >= 0:
-                    self.window_manager.bring_to_front(self.windows[idx]["pid"])
-            # ページ送り
-            self.page_navigator.next_page()
-            # 次のキャプチャをスケジュール
-            interval_ms = self.interval_slider.value() * 100
-            QTimer.singleShot(interval_ms, self._capture_page)
+            # 対象ウィンドウをフォアグラウンドに戻す
+            self._bring_target_to_front()
+            # フォーカス移動を待ってからページ送り
+            QTimer.singleShot(200, self._navigate_and_schedule_next)
         else:
             self._finish_capture()
+
+    def _bring_target_to_front(self):
+        """対象ウィンドウをフォアグラウンドに移動"""
+        idx = self.window_combo.currentIndex()
+        if idx >= 0 and idx < len(self.windows):
+            self.window_manager.bring_to_front(self.windows[idx]["pid"])
+
+    def _navigate_and_schedule_next(self):
+        """ページ送りして次のキャプチャをスケジュール"""
+        if not self.is_capturing:
+            return
+        self.page_navigator.next_page()
+        interval_ms = self.interval_slider.value() * 100
+        QTimer.singleShot(interval_ms, self._capture_page)
 
     def _finish_capture(self):
         """キャプチャ完了処理"""
