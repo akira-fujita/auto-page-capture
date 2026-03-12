@@ -31,12 +31,28 @@ cat > "$MACOS_DIR/launch" << 'LAUNCH_EOF'
 # .app/Contents/MacOS/launch → プロジェクトルートは4階層上
 # dist/KindleCapture.app/Contents/MacOS/launch
 DIR="$(cd "$(dirname "$0")/../../../.." && pwd)"
+LOGFILE="$DIR/dist/launch.log"
+
+exec > "$LOGFILE" 2>&1
+echo "=== KindleCapture launch $(date) ==="
+echo "DIR=$DIR"
+
 if [ ! -f "$DIR/main.py" ]; then
     osascript -e 'display dialog "KindleCapture.app はプロジェクトフォルダ内の dist/ に配置してください。" buttons {"OK"} default button "OK" with icon stop'
     exit 1
 fi
-cd "$DIR"
-exec arch -arm64 "$DIR/venv/bin/python" "$DIR/main.py"
+
+# Finder から起動時、macOS の com.apple.provenance 制限により
+# .app プロセスからプロジェクトファイルを直接読めないため
+# Terminal.app 経由で起動する
+echo "Launching via Terminal.app..."
+osascript <<APPLESCRIPT
+tell application "Terminal"
+    activate
+    do script "cd '$DIR' && arch -arm64 '$DIR/venv/bin/python' '$DIR/main.py'; exit"
+end tell
+APPLESCRIPT
+echo "osascript exit code: $?"
 LAUNCH_EOF
 chmod +x "$MACOS_DIR/launch"
 
