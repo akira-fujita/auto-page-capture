@@ -31,7 +31,7 @@ class _ChapterRow(QWidget):
         self.start_spin.setRange(1, max_page)
         self.start_spin.setValue(start_page)
         self.start_spin.setPrefix("開始: p.")
-        self.start_spin.setMinimumWidth(120)
+        self.start_spin.setMinimumWidth(160)
 
         self.range_label = QLabel()
         self.range_label.setStyleSheet("color: #666; min-width: 100px;")
