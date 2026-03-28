@@ -26,26 +26,37 @@ def sample_pdf_500():
         yield pdf_path
 
 
-def test_spinbox_accepts_three_digit_pages(sample_pdf_500):
-    """3桁のページ番号を入力できる"""
+def test_spinbox_has_no_prefix(sample_pdf_500):
+    """QSpinBoxにprefixが設定されていない（別ラベルで表示する）"""
     dialog = PdfSplitDialog(sample_pdf_500)
-
     row = dialog._chapter_rows[0]
-    row.start_spin.setValue(999)
-
-    # QSpinBoxのテキスト表示がクリップされないよう十分な幅がある
-    # minimumWidth が prefix + 3桁数字 + マージンを収容できること
-    min_width = row.start_spin.minimumWidth()
-    assert min_width >= 140, (
-        f"QSpinBoxのminimumWidth ({min_width}px) が3桁ページ番号に対して不十分"
+    assert row.start_spin.prefix() == "", (
+        "QSpinBoxにprefixがあると3桁入力時にバリデーション問題が発生する"
     )
+    dialog.close()
+
+
+def test_chapter_row_has_page_label(sample_pdf_500):
+    """章行に「開始: p.」ラベルが存在する"""
+    dialog = PdfSplitDialog(sample_pdf_500)
+    row = dialog._chapter_rows[0]
+    assert hasattr(row, "page_label"), "ページラベルが存在しない"
+    assert "p." in row.page_label.text()
+    dialog.close()
+
+
+def test_spinbox_accepts_three_digit_value(sample_pdf_500):
+    """3桁のページ番号を設定できる"""
+    dialog = PdfSplitDialog(sample_pdf_500)
+    row = dialog._chapter_rows[0]
+    row.start_spin.setValue(456)
+    assert row.start_spin.value() == 456
     dialog.close()
 
 
 def test_spinbox_max_matches_page_count(sample_pdf_500):
     """SpinBoxの最大値がPDFのページ数と一致する"""
     dialog = PdfSplitDialog(sample_pdf_500)
-
     row = dialog._chapter_rows[0]
     assert row.start_spin.maximum() == 500
     dialog.close()

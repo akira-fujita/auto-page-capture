@@ -27,11 +27,12 @@ class _ChapterRow(QWidget):
         self.name_edit.setPlaceholderText("章名")
         self.name_edit.setMinimumWidth(150)
 
+        self.page_label = QLabel("開始: p.")
+
         self.start_spin = QSpinBox()
         self.start_spin.setRange(1, max_page)
         self.start_spin.setValue(start_page)
-        self.start_spin.setPrefix("開始: p.")
-        self.start_spin.setMinimumWidth(160)
+        self.start_spin.setMinimumWidth(80)
 
         self.range_label = QLabel()
         self.range_label.setStyleSheet("color: #666; min-width: 100px;")
@@ -40,6 +41,7 @@ class _ChapterRow(QWidget):
         self.delete_btn.setFixedWidth(50)
 
         layout.addWidget(self.name_edit)
+        layout.addWidget(self.page_label)
         layout.addWidget(self.start_spin)
         layout.addWidget(self.range_label)
         layout.addWidget(self.delete_btn)
