@@ -94,10 +94,17 @@ class PdfSplitDialog(QDialog):
         scroll.setWidget(self._rows_container)
         chapter_outer.addWidget(scroll)
 
-        # 章追加ボタン
+        # ボタン行（自動検出 + 章追加）
+        btn_row = QHBoxLayout()
+        self._detect_btn = QPushButton("目次から自動検出")
+        self._detect_btn.clicked.connect(self._on_auto_detect)
+        btn_row.addWidget(self._detect_btn)
+
         add_btn = QPushButton("+ 章を追加")
         add_btn.clicked.connect(self._on_add_chapter)
-        chapter_outer.addWidget(add_btn)
+        btn_row.addWidget(add_btn)
+
+        chapter_outer.addLayout(btn_row)
 
         layout.addWidget(chapter_group)
 
@@ -174,6 +181,29 @@ class PdfSplitDialog(QDialog):
             else:
                 row.range_label.setText(f"→ p.{start}-{end}")
                 row.range_label.setStyleSheet("color: #666; min-width: 100px;")
+
+    def _on_auto_detect(self):
+        """PDFのブックマークから章を自動検出"""
+        detected = self.splitter.detect_chapters(self.pdf_path)
+
+        if not detected:
+            QMessageBox.information(
+                self, "自動検出",
+                "ブックマーク（しおり）が見つかりませんでした。\n"
+                "手動で章を追加してください。"
+            )
+            return
+
+        # 既存の章行をすべて削除
+        for row in list(self._chapter_rows):
+            self._rows_layout.removeWidget(row)
+            row.deleteLater()
+        self._chapter_rows.clear()
+
+        # 検出結果で章行を作成
+        for name, start_page in detected:
+            self._add_chapter_row(name, start_page)
+        self._update_ranges()
 
     def _on_add_chapter(self):
         """章追加ボタン"""
