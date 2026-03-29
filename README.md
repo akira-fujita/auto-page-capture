@@ -84,7 +84,7 @@ Place `resources/app.png` (1024x1024 recommended) or `resources/app.icns` before
 2. PDFファイルを選択 / Select a PDF file
 3. **「目次から自動検出」** でブックマーク（しおり）から章を自動入力（検出後も編集可能） / Click **"目次から自動検出"** to auto-detect chapters from PDF bookmarks (editable after detection)
 4. 必要に応じて章名や開始ページを手動で調整 / Adjust chapter names and start pages as needed
-5. 出力先フォルダを指定して「分割実行」 / Choose output folder and click "分割実行"
+5. 出力先フォルダを指定して「PDFを分割」 / Choose output folder and click "PDFを分割"
 
 ### 注意事項 / Notes
 

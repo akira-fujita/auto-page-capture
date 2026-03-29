@@ -182,6 +182,16 @@ class PdfSplitDialog(QDialog):
                 row.range_label.setText(f"→ p.{start}-{end}")
                 row.range_label.setStyleSheet("color: #666; min-width: 100px;")
 
+    def _has_edited_chapter_rows(self) -> bool:
+        """章行がユーザーによって編集済みかどうかを判定"""
+        for i, row in enumerate(self._chapter_rows):
+            default_name = f"第{i + 1}章"
+            if row.name_edit.text() != default_name:
+                return True
+            if i == 0 and row.start_spin.value() != 1:
+                return True
+        return len(self._chapter_rows) > 1
+
     def _on_auto_detect(self):
         """PDFのブックマークから章を自動検出"""
         detected = self.splitter.detect_chapters(self.pdf_path)
@@ -194,11 +204,27 @@ class PdfSplitDialog(QDialog):
             )
             return
 
+        # 編集済みの章がある場合は確認
+        if self._has_edited_chapter_rows():
+            result = QMessageBox.question(
+                self, "自動検出",
+                "現在の章設定を検出結果で置き換えますか？\n"
+                "既存の入力内容は失われます。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if result != QMessageBox.StandardButton.Yes:
+                return
+
         # 既存の章行をすべて削除
         for row in list(self._chapter_rows):
             self._rows_layout.removeWidget(row)
             row.deleteLater()
         self._chapter_rows.clear()
+
+        # 先頭ブックマークがp.1でない場合、冒頭ページの補完章を追加
+        if detected[0][1] > 1:
+            self._add_chapter_row("(前付け)", 1)
 
         # 検出結果で章行を作成
         for name, start_page in detected:
