@@ -194,7 +194,15 @@ class PdfSplitDialog(QDialog):
 
     def _on_auto_detect(self):
         """PDFのブックマークから章を自動検出"""
-        detected = self.splitter.detect_chapters(self.pdf_path)
+        try:
+            detected = self.splitter.detect_chapters(self.pdf_path)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "自動検出エラー",
+                f"ブックマークの読み込みに失敗しました:\n{e}",
+            )
+            return
 
         if not detected:
             QMessageBox.information(

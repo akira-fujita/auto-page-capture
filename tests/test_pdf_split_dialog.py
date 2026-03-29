@@ -104,7 +104,7 @@ def test_auto_detect_populates_chapters(pdf_with_bookmarks):
 
 
 def test_auto_detect_chapters_are_editable(pdf_with_bookmarks):
-    """自動検出後も章を編集できる"""
+    """自動検出後も章を編集・削除・追加できる"""
     dialog = PdfSplitDialog(pdf_with_bookmarks)
     dialog._on_auto_detect()
     # 章名を変更できる
@@ -113,9 +113,12 @@ def test_auto_detect_chapters_are_editable(pdf_with_bookmarks):
     # 開始ページを変更できる
     dialog._chapter_rows[0].start_spin.setValue(2)
     assert dialog._chapter_rows[0].start_spin.value() == 2
+    # 自動検出された章を削除できる
+    dialog._chapter_rows[1].delete_btn.click()
+    assert len(dialog._chapter_rows) == 2
     # 章を追加できる
     dialog._on_add_chapter()
-    assert len(dialog._chapter_rows) == 4
+    assert len(dialog._chapter_rows) == 3
     dialog.close()
 
 
@@ -228,4 +231,32 @@ def test_spinbox_accepts_three_digit_key_input(sample_pdf_500):
     assert row.start_spin.value() == 456, "3桁のキー入力が受け付けられない"
     display = line_edit.displayText()
     assert "456" in display, f"表示が切れている: {display}"
+    dialog.close()
+
+
+def test_auto_detect_handles_exception_gracefully(sample_pdf_500, monkeypatch):
+    """detect_chapters()が例外を投げた場合、エラーメッセージを表示し既存章を保持する"""
+    dialog = PdfSplitDialog(sample_pdf_500)
+    # 章を編集しておく
+    dialog._chapter_rows[0].name_edit.setText("手動入力済み")
+
+    # detect_chapters が例外を投げるようにする
+    monkeypatch.setattr(
+        dialog.splitter, "detect_chapters",
+        lambda path: (_ for _ in ()).throw(RuntimeError("壊れたPDF"))
+    )
+
+    critical_messages = []
+    monkeypatch.setattr(
+        QMessageBox, "critical",
+        lambda *args, **kwargs: critical_messages.append(args)
+    )
+
+    dialog._on_auto_detect()
+
+    # エラーメッセージが表示される
+    assert len(critical_messages) == 1
+    # 既存の章入力が保持される
+    assert len(dialog._chapter_rows) == 1
+    assert dialog._chapter_rows[0].name_edit.text() == "手動入力済み"
     dialog.close()
