@@ -18,6 +18,34 @@ class PdfSplitter:
     def __init__(self):
         self.file_manager = FileManager()
 
+    def detect_chapters(self, pdf_path: Path) -> list[tuple[str, int]]:
+        """PDFのブックマーク（アウトライン）から章情報を自動検出
+
+        Args:
+            pdf_path: PDFファイルパス
+
+        Returns:
+            (章名, 開始ページ番号(1-indexed)) のリスト。ページ番号順。
+            検出できない場合は空リスト。
+        """
+        reader = PdfReader(str(pdf_path))
+        outlines = reader.outline
+
+        if not outlines:
+            return []
+
+        chapters = []
+        for item in outlines:
+            # ネストされたブックマーク（リスト）はスキップ（トップレベルのみ）
+            if isinstance(item, list):
+                continue
+            title = item.get("/Title", "")
+            page_num = reader.get_destination_page_number(item)
+            chapters.append((title, page_num + 1))  # 1-indexed
+
+        chapters.sort(key=lambda c: c[1])
+        return chapters
+
     def get_page_count(self, pdf_path: Path) -> int:
         """PDFのページ数を取得"""
         reader = PdfReader(str(pdf_path))
