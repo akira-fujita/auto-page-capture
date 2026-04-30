@@ -243,18 +243,22 @@ class PdfSplitDialog(QDialog):
                 return
 
         try:
-            output_paths = self.splitter.split(self.pdf_path, chapters, output_dir)
+            # 既存ファイルとの衝突を避けるため、毎回タイムスタンプ付きサブフォルダを作る
+            split_dir = self.splitter.file_manager.create_split_output_directory(
+                output_dir, self.pdf_path.stem
+            )
+            output_paths = self.splitter.split(self.pdf_path, chapters, split_dir)
 
             file_list = "\n".join(f"  - {p.name}" for p in output_paths)
             QMessageBox.information(
                 self,
                 "完了",
                 f"PDFを分割しました。\n\n"
-                f"出力先: {output_dir}\n\n"
+                f"出力先: {split_dir}\n\n"
                 f"ファイル:\n{file_list}"
             )
 
-            subprocess.Popen(["open", str(output_dir)])
+            subprocess.Popen(["open", str(split_dir)])
             self.accept()
 
         except Exception as e:
