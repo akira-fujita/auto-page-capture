@@ -85,6 +85,9 @@ Place `resources/app.png` (1024x1024 recommended) or `resources/app.icns` before
 3. 章ごとに名前と開始ページを設定 / Set chapter names and start pages
 4. 出力先フォルダを指定して「分割実行」 / Choose output folder and click "分割実行"
 
+> 出力先の下に `YYYY-MM-DD_HHMMSS_<元PDF名>/` というサブフォルダが毎回作られ、章ファイルはその中に保存されます（既存ファイルとの衝突を防ぐため）。
+> A subfolder `YYYY-MM-DD_HHMMSS_<source-pdf-name>/` is created under the output folder for each split run; chapter files are saved inside it (to avoid overwriting existing files).
+
 ### 注意事項 / Notes
 
 - キャプチャ中は対象ウィンドウを動かさないでください / Do not move the target window during capture
