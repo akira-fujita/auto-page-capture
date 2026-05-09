@@ -27,11 +27,12 @@ class _ChapterRow(QWidget):
         self.name_edit.setPlaceholderText("章名")
         self.name_edit.setMinimumWidth(150)
 
+        self.page_label = QLabel("開始: p.")
+
         self.start_spin = QSpinBox()
         self.start_spin.setRange(1, max_page)
         self.start_spin.setValue(start_page)
-        self.start_spin.setPrefix("開始: p.")
-        self.start_spin.setMinimumWidth(120)
+        self.start_spin.setMinimumWidth(80)
 
         self.range_label = QLabel()
         self.range_label.setStyleSheet("color: #666; min-width: 100px;")
@@ -40,6 +41,7 @@ class _ChapterRow(QWidget):
         self.delete_btn.setFixedWidth(50)
 
         layout.addWidget(self.name_edit)
+        layout.addWidget(self.page_label)
         layout.addWidget(self.start_spin)
         layout.addWidget(self.range_label)
         layout.addWidget(self.delete_btn)
@@ -92,10 +94,17 @@ class PdfSplitDialog(QDialog):
         scroll.setWidget(self._rows_container)
         chapter_outer.addWidget(scroll)
 
-        # 章追加ボタン
+        # ボタン行（自動検出 + 章追加）
+        btn_row = QHBoxLayout()
+        self._detect_btn = QPushButton("目次から自動検出")
+        self._detect_btn.clicked.connect(self._on_auto_detect)
+        btn_row.addWidget(self._detect_btn)
+
         add_btn = QPushButton("+ 章を追加")
         add_btn.clicked.connect(self._on_add_chapter)
-        chapter_outer.addWidget(add_btn)
+        btn_row.addWidget(add_btn)
+
+        chapter_outer.addLayout(btn_row)
 
         layout.addWidget(chapter_group)
 
@@ -172,6 +181,63 @@ class PdfSplitDialog(QDialog):
             else:
                 row.range_label.setText(f"→ p.{start}-{end}")
                 row.range_label.setStyleSheet("color: #666; min-width: 100px;")
+
+    def _has_edited_chapter_rows(self) -> bool:
+        """章行がユーザーによって編集済みかどうかを判定"""
+        for i, row in enumerate(self._chapter_rows):
+            default_name = f"第{i + 1}章"
+            if row.name_edit.text() != default_name:
+                return True
+            if i == 0 and row.start_spin.value() != 1:
+                return True
+        return len(self._chapter_rows) > 1
+
+    def _on_auto_detect(self):
+        """PDFのブックマークから章を自動検出"""
+        try:
+            detected = self.splitter.detect_chapters(self.pdf_path)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "自動検出エラー",
+                f"ブックマークの読み込みに失敗しました:\n{e}",
+            )
+            return
+
+        if not detected:
+            QMessageBox.information(
+                self, "自動検出",
+                "ブックマーク（しおり）が見つかりませんでした。\n"
+                "手動で章を追加してください。"
+            )
+            return
+
+        # 編集済みの章がある場合は確認
+        if self._has_edited_chapter_rows():
+            result = QMessageBox.question(
+                self, "自動検出",
+                "現在の章設定を検出結果で置き換えますか？\n"
+                "既存の入力内容は失われます。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if result != QMessageBox.StandardButton.Yes:
+                return
+
+        # 既存の章行をすべて削除
+        for row in list(self._chapter_rows):
+            self._rows_layout.removeWidget(row)
+            row.deleteLater()
+        self._chapter_rows.clear()
+
+        # 先頭ブックマークがp.1でない場合、冒頭ページの補完章を追加
+        if detected[0][1] > 1:
+            self._add_chapter_row("(前付け)", 1)
+
+        # 検出結果で章行を作成
+        for name, start_page in detected:
+            self._add_chapter_row(name, start_page)
+        self._update_ranges()
 
     def _on_add_chapter(self):
         """章追加ボタン"""
