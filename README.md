@@ -14,6 +14,7 @@ A macOS desktop tool that automatically captures Kindle app pages and converts t
 - **PDF出力** / **PDF export** — 全ページ結合 or 章ごとに分割してPDF出力 / Export as a single merged PDF or split by chapter
 - **既存PDF分割** / **PDF splitting** — 既存のPDFファイルを章ごとに分割（開始ページ指定・サムネイルプレビュー付き） / Split existing PDF files into chapters with start page configuration and thumbnail preview
 - **デスクトップ通知** / **Desktop notifications** — キャプチャ完了・PDF出力完了時にmacOS通知 / Notifies on capture and export completion
+- **テキスト埋め込み (OCR)** / **Embedded text (OCR)** — macOS Visionで認識したテキストレイヤーをPDFに重ねる（NotebookLMの精度向上） / Overlays a Vision-recognized text layer onto the PDF (improves NotebookLM accuracy)
 
 ## 必要環境 / Requirements
 
@@ -40,8 +41,10 @@ pip install -r requirements.txt
 | Pillow | 画像処理 / Image processing |
 | img2pdf | PDF生成 / PDF generation |
 | pypdf | PDF分割 / PDF splitting |
+| reportlab | テキストレイヤー付きPDF生成 / Text-layered PDF generation |
 | pyobjc-framework-Quartz | macOSウィンドウ管理 / macOS window management |
 | pyobjc-framework-Cocoa | macOSアプリ制御 / macOS app control |
+| pyobjc-framework-Vision | macOS OCR / macOS OCR |
 
 ## 使い方 / Usage
 
@@ -77,6 +80,7 @@ Place `resources/app.png` (1024x1024 recommended) or `resources/app.icns` before
 3. **キャプチャ開始** / **Start capture** — 「キャプチャ開始」をクリック / Click the start button
 4. **章分割（任意）** / **Split chapters (optional)** — キャプチャ完了後、サムネイルをクリックして章を区切る / After capture, click thumbnails to mark chapter boundaries
 5. **PDF出力** / **Export PDF** — 全ページ結合 or 章ごとのPDFを出力 / Export as merged or per-chapter PDFs
+   - デフォルトで「テキストを埋め込む (OCR)」オプションが有効（macOS Visionで認識したテキストレイヤーをPDFに追加） / The "テキストを埋め込む (OCR)" option is enabled by default (adds Vision-recognized text layer to PDF)
 
 ### 既存PDFの分割 / Splitting existing PDFs
 
