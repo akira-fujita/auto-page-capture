@@ -14,3 +14,44 @@ class TextBox:
     w: float
     h: float
     confidence: float
+
+
+from pathlib import Path
+
+
+class VisionOcrEngine:
+    """macOS Vision を用いたOCRエンジン"""
+
+    def recognize(self, image_path: Path) -> list["TextBox"]:
+        import Vision
+        from Foundation import NSURL
+
+        url = NSURL.fileURLWithPath_(str(image_path))
+        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
+        request = Vision.VNRecognizeTextRequest.alloc().init()
+        request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+        request.setRecognitionLanguages_(["ja-JP", "en-US"])
+        request.setUsesLanguageCorrection_(True)
+
+        success, _error = handler.performRequests_error_([request], None)
+        if not success:
+            return []
+
+        boxes: list[TextBox] = []
+        for observation in (request.results() or []):
+            candidates = observation.topCandidates_(1)
+            if candidates is None or len(candidates) == 0:
+                continue
+            top = candidates[0]
+            bbox = observation.boundingBox()
+            boxes.append(
+                TextBox(
+                    text=top.string(),
+                    x=float(bbox.origin.x),
+                    y=float(bbox.origin.y),
+                    w=float(bbox.size.width),
+                    h=float(bbox.size.height),
+                    confidence=float(top.confidence()),
+                )
+            )
+        return boxes
