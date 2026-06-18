@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget,
     QLabel, QLineEdit, QPushButton, QCheckBox, QListWidget,
     QListWidgetItem, QFrame, QMessageBox, QGroupBox, QSplitter,
+    QApplication,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
@@ -385,6 +386,7 @@ class ChapterDialog(QDialog):
             )
             return
 
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             exported_files = []
             ocr = self.ocr_check.isChecked()
@@ -435,3 +437,6 @@ class ChapterDialog(QDialog):
                 "エラー",
                 f"PDF出力中にエラーが発生しました:\n{str(e)}"
             )
+
+        finally:
+            QApplication.restoreOverrideCursor()

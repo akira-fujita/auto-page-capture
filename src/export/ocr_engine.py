@@ -2,6 +2,7 @@
 """OCRエンジン: 画像から文字とその位置を認識する"""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -14,9 +15,6 @@ class TextBox:
     w: float
     h: float
     confidence: float
-
-
-from pathlib import Path
 
 
 class VisionOcrEngine:
