@@ -222,6 +222,10 @@ class ChapterDialog(QDialog):
         self.chapter_pdf_check.setChecked(False)
         output_layout.addWidget(self.chapter_pdf_check)
 
+        self.ocr_check = QCheckBox("テキストを埋め込む (OCR)")
+        self.ocr_check.setChecked(True)
+        output_layout.addWidget(self.ocr_check)
+
         right_layout.addWidget(output_group)
 
         splitter.addWidget(right_widget)
@@ -383,11 +387,12 @@ class ChapterDialog(QDialog):
 
         try:
             exported_files = []
+            ocr = self.ocr_check.isChecked()
 
             # 全ページを1つのPDFにまとめる
             if self.merge_check.isChecked():
                 merged_path = self.output_dir / "merged.pdf"
-                self.pdf_generator.generate(self.image_paths, merged_path)
+                self.pdf_generator.generate(self.image_paths, merged_path, ocr=ocr)
                 exported_files.append(merged_path)
 
             # 章ごとにPDFを作成
@@ -397,7 +402,7 @@ class ChapterDialog(QDialog):
                     pdf_path = self.file_manager.get_chapter_pdf_path(
                         self.output_dir, i + 1, chapter.name
                     )
-                    self.pdf_generator.generate(chapter_images, pdf_path)
+                    self.pdf_generator.generate(chapter_images, pdf_path, ocr=ocr)
                     exported_files.append(pdf_path)
 
             # 元画像を削除
