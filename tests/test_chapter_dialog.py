@@ -43,6 +43,18 @@ def test_ocr_checkbox_default_on_and_forwarded(qapp, image_paths, monkeypatch):
         # 通知/メッセージボックスを抑止
         monkeypatch.setattr("src.ui.chapter_dialog.QMessageBox.information", lambda *a, **k: None)
         monkeypatch.setattr("src.utils.notification.send_notification", lambda *a, **k: None)
+        # Finderを実際に開かない / ダイアログを閉じない (ヘッドレス化)
+        popen_calls = []
+        monkeypatch.setattr(
+            "src.ui.chapter_dialog.subprocess.Popen",
+            lambda *a, **k: popen_calls.append((a, k)),
+        )
+        monkeypatch.setattr(dialog, "accept", lambda: None)
 
         dialog._export_pdfs()
         assert calls == [True]
+        # Popenはスタブ済み(実際にFinderを開いていない)で、open呼び出しが
+        # スタブを経由していることを確認
+        assert len(popen_calls) == 1
+        (popen_args, _popen_kwargs) = popen_calls[0]
+        assert popen_args[0][0] == "open"

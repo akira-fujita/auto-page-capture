@@ -59,6 +59,11 @@ class PdfGenerator:
             c.drawImage(str(image_path), 0, 0, width=width, height=height)
 
             for box in ocr_engine.recognize(image_path):
+                # Vision の boundingBox は正規化(0..1)・左下原点。reportlab の
+                # canvas も左下原点なので、Y反転なしで座標がそのまま対応する。
+                # テキストは不可視(render mode 3)で描画するため、正確な
+                # ベースライン位置はテキスト選択時のハイライト形状に影響する
+                # だけで、抽出されるテキスト自体には影響しない。
                 x = box.x * width
                 y = box.y * height
                 font_size = max(box.h * height, 1.0)

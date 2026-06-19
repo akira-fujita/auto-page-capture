@@ -31,9 +31,9 @@ class VisionOcrEngine:
         request.setRecognitionLanguages_(["ja-JP", "en-US"])
         request.setUsesLanguageCorrection_(True)
 
-        success, _error = handler.performRequests_error_([request], None)
+        success, error = handler.performRequests_error_([request], None)
         if not success:
-            return []
+            raise RuntimeError(f"Vision OCR failed: {error}")
 
         boxes: list[TextBox] = []
         for observation in (request.results() or []):

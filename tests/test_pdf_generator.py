@@ -2,6 +2,7 @@
 import pytest
 import tempfile
 from pathlib import Path
+import img2pdf
 from PIL import Image
 from pypdf import PdfReader
 from src.export.pdf_generator import PdfGenerator
@@ -86,3 +87,14 @@ def test_generate_without_ocr_has_no_text(saved_image_paths):
         reader = PdfReader(str(output))
         text = "".join(page.extract_text() for page in reader.pages).strip()
         assert "テスト本文" not in text
+
+
+def test_generate_without_ocr_matches_img2pdf_bytes(saved_image_paths):
+    """ocr=False(既定)の出力が従来のimg2pdf経路とバイト単位で一致する(後方互換)"""
+    expected = img2pdf.convert([str(p) for p in saved_image_paths])
+    gen = PdfGenerator()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output = Path(tmpdir) / "image_only.pdf"
+        gen.generate(saved_image_paths, output)
+        actual = output.read_bytes()
+        assert actual == expected
