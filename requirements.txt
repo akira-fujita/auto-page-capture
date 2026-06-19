@@ -5,6 +5,8 @@ img2pdf>=0.5.1
 pyobjc-framework-Quartz>=10.0
 pyobjc-framework-Cocoa>=10.0
 pypdf>=4.0.0
+reportlab>=4.0.0
+pyobjc-framework-Vision>=10.0
 
 # dev
 pytest>=9.0.0
