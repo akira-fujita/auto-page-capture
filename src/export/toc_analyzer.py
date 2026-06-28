@@ -118,6 +118,9 @@ class ClaudeTocEngine:
             text=True,
             timeout=self.timeout,
         )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(f"claude CLI が失敗しました: {detail[:200]}")
         # --output-format json は {"result": "<assistantのテキスト>"} を返す
         try:
             payload = json.loads(result.stdout)

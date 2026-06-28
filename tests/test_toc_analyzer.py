@@ -73,6 +73,8 @@ def test_claude_engine_invokes_cli_and_parses(monkeypatch):
 
     class _Result:
         stdout = json.dumps({"result": '[{"name": "第1章", "page": 1}]'})
+        returncode = 0
+        stderr = ""
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
@@ -87,3 +89,16 @@ def test_claude_engine_invokes_cli_and_parses(monkeypatch):
     # 画像パスがプロンプトに含まれる
     joined = " ".join(captured["cmd"])
     assert "toc1.png" in joined and "toc2.png" in joined
+
+
+def test_claude_engine_raises_on_nonzero_returncode(monkeypatch):
+    class _FailResult:
+        returncode = 1
+        stderr = "boom"
+        stdout = ""
+
+    monkeypatch.setattr(
+        "src.export.toc_analyzer.subprocess.run", lambda *a, **kw: _FailResult()
+    )
+    with pytest.raises(RuntimeError):
+        ClaudeTocEngine().analyze([Path("/tmp/x.png")])

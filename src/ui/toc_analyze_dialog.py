@@ -64,6 +64,8 @@ class TocAnalyzeDialog(QDialog):
         anchor_layout.addWidget(self.anchor_capture_spin)
         anchor_layout.addStretch()
         layout.addWidget(anchor_group)
+        self.anchor_printed_spin.valueChanged.connect(self._on_anchor_changed)
+        self.anchor_capture_spin.valueChanged.connect(self._on_anchor_changed)
 
         # 解析ボタン
         self.analyze_btn = QPushButton("解析する")
@@ -71,8 +73,8 @@ class TocAnalyzeDialog(QDialog):
         layout.addWidget(self.analyze_btn)
 
         # ③ プレビュー
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["章名", "印刷p", "→ キャプチャ範囲"])
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["章名", "→ キャプチャ範囲"])
         layout.addWidget(self.table)
 
         self.warning_label = QLabel()
@@ -106,6 +108,11 @@ class TocAnalyzeDialog(QDialog):
             self._entries = self.engine.analyze(images)
         except FileNotFoundError:
             QApplication.restoreOverrideCursor()
+            self._entries = []
+            self.result_ranges = []
+            self.warnings = []
+            self._refresh_table()
+            self.apply_btn.setEnabled(False)
             QMessageBox.critical(
                 self, "エラー",
                 "claude CLI が見つかりませんでした。手動でページを入力してください。",
@@ -113,6 +120,11 @@ class TocAnalyzeDialog(QDialog):
             return
         except Exception as e:  # タイムアウト・JSON不可など
             QApplication.restoreOverrideCursor()
+            self._entries = []
+            self.result_ranges = []
+            self.warnings = []
+            self._refresh_table()
+            self.apply_btn.setEnabled(False)
             QMessageBox.critical(
                 self, "エラー",
                 f"目次の解析に失敗しました:\n{e}\n\n手動でページを入力してください。",
@@ -120,6 +132,10 @@ class TocAnalyzeDialog(QDialog):
             return
         QApplication.restoreOverrideCursor()
         self._recompute()
+
+    def _on_anchor_changed(self, _value: int):
+        if self._entries:
+            self._recompute()
 
     def _recompute(self):
         offset = compute_offset(
@@ -135,5 +151,5 @@ class TocAnalyzeDialog(QDialog):
         self.table.setRowCount(len(self.result_ranges))
         for i, c in enumerate(self.result_ranges):
             self.table.setItem(i, 0, QTableWidgetItem(c.name))
-            self.table.setItem(i, 2, QTableWidgetItem(f"p.{c.start + 1}-{c.end + 1}"))
+            self.table.setItem(i, 1, QTableWidgetItem(f"p.{c.start + 1}-{c.end + 1}"))
         self.warning_label.setText("\n".join(self.warnings))

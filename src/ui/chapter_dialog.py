@@ -388,7 +388,7 @@ class ChapterDialog(QDialog):
         if dialog.exec() and dialog.result_ranges:
             self._apply_toc_ranges(dialog.result_ranges)
 
-    def _apply_toc_ranges(self, ranges: "list[ChapterRange]"):
+    def _apply_toc_ranges(self, ranges: list[ChapterRange]):
         """解析結果で章リストを置換して再描画する"""
         self.chapters = [
             Chapter(name=r.name, start=r.start, end=r.end) for r in ranges
