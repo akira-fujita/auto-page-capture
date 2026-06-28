@@ -1,6 +1,9 @@
 """目次画像から章境界を自動算出するロジックとエンジン"""
 
+import json
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -67,3 +70,58 @@ def entries_to_chapters(
         chapters.append(ChapterRange(name=name, start=start, end=end))
 
     return chapters, warnings
+
+
+_PROMPT_TEMPLATE = (
+    "次の画像は本の目次のページです: {paths}\n"
+    "各画像を読み、章タイトルと、その章に書かれている印刷ページ番号を抽出してください。\n"
+    "結果は説明を含めず、次の形式の JSON 配列だけを出力してください:\n"
+    '[{{"name": "章タイトル", "page": 章の開始印刷ページ番号(整数)}}]'
+)
+
+
+def _extract_entries(stdout: str) -> list[TocEntry]:
+    """claude の出力テキストから JSON 配列を取り出して TocEntry 列にする。"""
+    text = stdout.strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError(f"目次の解析結果を読み取れませんでした: {stdout[:200]}")
+        try:
+            data = json.loads(text[start : end + 1])
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"目次の解析結果を読み取れませんでした: {stdout[:200]}"
+            ) from exc
+
+    entries: list[TocEntry] = []
+    for item in data:
+        entries.append(TocEntry(name=str(item["name"]), printed_page=int(item["page"])))
+    return entries
+
+
+class ClaudeTocEngine:
+    """claude CLI をヘッドレス実行して目次を解析するエンジン"""
+
+    def __init__(self, timeout: int = 120):
+        self.timeout = timeout
+
+    def analyze(self, image_paths: list[Path]) -> list[TocEntry]:
+        paths = ", ".join(str(p) for p in image_paths)
+        prompt = _PROMPT_TEMPLATE.format(paths=paths)
+        result = subprocess.run(
+            ["claude", "-p", "--output-format", "json", prompt],
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+        )
+        # --output-format json は {"result": "<assistantのテキスト>"} を返す
+        try:
+            payload = json.loads(result.stdout)
+            inner = payload.get("result", result.stdout)
+        except json.JSONDecodeError:
+            inner = result.stdout
+        return _extract_entries(inner)

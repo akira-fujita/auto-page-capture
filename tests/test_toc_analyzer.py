@@ -1,5 +1,11 @@
+import json
+from pathlib import Path
+
+import pytest
+
 from src.export.toc_analyzer import (
     TocEntry, ChapterRange, compute_offset, entries_to_chapters,
+    _extract_entries, ClaudeTocEngine,
 )
 
 
@@ -43,3 +49,41 @@ def test_entries_to_chapters_dedups_same_start_with_warning():
     chapters, warnings = entries_to_chapters(entries, offset=7, total_pages=60)
     assert [c.name for c in chapters] == ["第1章"]
     assert len(warnings) == 1
+
+
+def test_extract_entries_plain_json():
+    out = '[{"name": "第1章", "page": 1}, {"name": "第2章", "page": 45}]'
+    entries = _extract_entries(out)
+    assert entries == [TocEntry("第1章", 1), TocEntry("第2章", 45)]
+
+
+def test_extract_entries_with_codeblock_and_prose():
+    out = "解析しました:\n```json\n[{\"name\": \"序章\", \"page\": 3}]\n```\nどうぞ"
+    entries = _extract_entries(out)
+    assert entries == [TocEntry("序章", 3)]
+
+
+def test_extract_entries_raises_on_garbage():
+    with pytest.raises(ValueError):
+        _extract_entries("ページ番号が読めませんでした")
+
+
+def test_claude_engine_invokes_cli_and_parses(monkeypatch):
+    captured = {}
+
+    class _Result:
+        stdout = json.dumps({"result": '[{"name": "第1章", "page": 1}]'})
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _Result()
+
+    monkeypatch.setattr("src.export.toc_analyzer.subprocess.run", fake_run)
+    engine = ClaudeTocEngine()
+    entries = engine.analyze([Path("/tmp/toc1.png"), Path("/tmp/toc2.png")])
+
+    assert entries == [TocEntry("第1章", 1)]
+    assert captured["cmd"][0] == "claude"
+    # 画像パスがプロンプトに含まれる
+    joined = " ".join(captured["cmd"])
+    assert "toc1.png" in joined and "toc2.png" in joined
