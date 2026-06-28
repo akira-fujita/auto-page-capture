@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from src.export.pdf_generator import PdfGenerator
 from src.export.file_manager import FileManager
+from src.export.toc_analyzer import ChapterRange
 
 
 @dataclass
@@ -151,6 +152,10 @@ class ChapterDialog(QDialog):
         )
         instruction.setStyleSheet("color: #666; margin-bottom: 10px;")
         layout.addWidget(instruction)
+
+        toc_btn = QPushButton("目次から章を自動解析")
+        toc_btn.clicked.connect(self._open_toc_analyze)
+        layout.addWidget(toc_btn)
 
         # メインエリア（スプリッター）
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -375,6 +380,22 @@ class ChapterDialog(QDialog):
         self.name_edit.setEnabled(False)
         self.name_edit.clear()
         self.delete_btn.setEnabled(False)
+
+    def _open_toc_analyze(self):
+        """目次解析ダイアログを開き、確定したら章を反映"""
+        from src.ui.toc_analyze_dialog import TocAnalyzeDialog
+        dialog = TocAnalyzeDialog(self.image_paths, parent=self)
+        if dialog.exec() and dialog.result_ranges:
+            self._apply_toc_ranges(dialog.result_ranges)
+
+    def _apply_toc_ranges(self, ranges: "list[ChapterRange]"):
+        """解析結果で章リストを置換して再描画する"""
+        self.chapters = [
+            Chapter(name=r.name, start=r.start, end=r.end) for r in ranges
+        ]
+        self._recalculate_chapter_ranges()
+        self._update_chapter_list()
+        self._update_thumbnails()
 
     def _export_pdfs(self):
         """PDFを出力"""

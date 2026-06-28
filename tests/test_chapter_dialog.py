@@ -58,3 +58,23 @@ def test_ocr_checkbox_default_on_and_forwarded(qapp, image_paths, monkeypatch):
         assert len(popen_calls) == 1
         (popen_args, _popen_kwargs) = popen_calls[0]
         assert popen_args[0][0] == "open"
+
+
+from src.export.toc_analyzer import ChapterRange
+
+
+def test_apply_toc_ranges_replaces_chapters(qapp, image_paths):
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as outdir:
+        dialog = ChapterDialog(image_paths, Path(outdir), keep_images=True)
+        ranges = [
+            ChapterRange("はじめに", 0, 0),
+            ChapterRange("本編", 1, 1),
+        ]
+        dialog._apply_toc_ranges(ranges)
+        assert [c.name for c in dialog.chapters] == ["はじめに", "本編"]
+        assert dialog.chapters[0].start == 0 and dialog.chapters[0].end == 0
+        assert dialog.chapters[1].start == 1 and dialog.chapters[1].end == 1
+        # 章リスト表示も更新される
+        assert dialog.chapter_list.count() == 2
