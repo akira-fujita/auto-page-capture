@@ -113,6 +113,104 @@ def test_analyze_file_not_found_resets_state(qapp, monkeypatch):
     assert d.apply_btn.isEnabled() is False
 
 
+def _mixed_entries():
+    """章・部・巻末が混在するエントリ（前付けは既に別処理で除外済み想定）"""
+    return [
+        TocEntry("1章 シンプリシティ", 1),
+        TocEntry("第I部 やること", 5),
+        TocEntry("2章 今すぐ減量を", 7),
+        TocEntry("参考文献", 159),
+        TocEntry("索引", 165),
+    ]
+
+
+def test_after_analyze_all_rows_checked(qapp):
+    d, engine, splitter = _dialog(_mixed_entries())
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    # 解析直後は全行チェック済み → selected == result
+    assert [c.name for c in d.selected_ranges] == [c.name for c in d.result_ranges]
+    assert d.apply_btn.isEnabled() is True
+
+
+def test_chapter_only_button_keeps_only_chapters(qapp):
+    d, engine, splitter = _dialog(_mixed_entries())
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    d._on_chapter_only()
+    assert [c.name for c in d.selected_ranges] == ["1章 シンプリシティ", "2章 今すぐ減量を"]
+
+
+def test_select_none_disables_apply(qapp):
+    d, engine, splitter = _dialog(_mixed_entries())
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    d._set_all_checked(False)
+    assert d.selected_ranges == []
+    assert d.apply_btn.isEnabled() is False
+
+
+def test_chapter_only_no_match_warns_and_keeps_state(qapp, monkeypatch):
+    d, engine, splitter = _dialog([TocEntry("参考文献", 159), TocEntry("索引", 165)])
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    calls = []
+    monkeypatch.setattr(
+        "src.ui.pdf_toc_analyze_dialog.QMessageBox.information",
+        lambda *a, **k: calls.append(a),
+    )
+    before = [c.name for c in d.selected_ranges]
+    d._on_chapter_only()
+    assert len(calls) == 1  # 警告が出た
+    assert [c.name for c in d.selected_ranges] == before  # 状態は不変
+
+
+def test_manual_uncheck_updates_selected_and_apply(qapp):
+    from PyQt6.QtCore import Qt
+    d, engine, splitter = _dialog(_mixed_entries())
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    # 先頭行(1章)のチェックを外す
+    d.table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    assert "1章 シンプリシティ" not in [c.name for c in d.selected_ranges]
+    assert d.apply_btn.isEnabled() is True
+
+
+def test_selection_survives_anchor_change(qapp):
+    """章のみ/手動選択がアンカー変更(recompute)で失われないこと"""
+    d, engine, splitter = _dialog(_mixed_entries())
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    d._on_chapter_only()
+    before = [c.name for c in d.selected_ranges]
+    assert before == ["1章 シンプリシティ", "2章 今すぐ減量を"]
+    # アンカー変更で recompute が走っても選択は維持される
+    d.anchor_pdf_spin.setValue(18)
+    assert [c.name for c in d.selected_ranges] == before
+
+
+def test_selection_preserved_for_duplicate_names(qapp):
+    """同名の行が複数あっても、どの行を外したかが recompute で保持される"""
+    from PyQt6.QtCore import Qt
+    entries = [TocEntry("同名", 10), TocEntry("同名", 20), TocEntry("2章", 30)]
+    d, engine, splitter = _dialog(entries)
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(1)  # offset 0
+    d._run_analyze()
+    # 先頭の「同名」だけ外す
+    d.table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    # アンカー変更で recompute（非リセット）
+    d.anchor_pdf_spin.setValue(2)
+    assert d.table.item(0, 0).checkState() == Qt.CheckState.Unchecked  # 外した行は維持
+    assert d.table.item(1, 0).checkState() == Qt.CheckState.Checked    # もう一方は維持
+
+
 def test_preface_check_toggle_triggers_recompute(qapp):
     """FIX 1: preface_check の toggled シグナルが _recompute を呼ぶこと"""
     # offset=10: 第1章 start = 1 + 10 - 1 = 10 > 0 → 前付けが生まれる

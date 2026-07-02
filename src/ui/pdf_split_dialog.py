@@ -19,8 +19,12 @@ from src.export.toc_analyzer import ChapterRange
 class _ChapterRow(QWidget):
     """章1行分の入力ウィジェット"""
 
-    def __init__(self, index: int, name: str, start_page: int, max_page: int, parent=None):
+    def __init__(self, index: int, name: str, start_page: int, max_page: int,
+                 end_page: int | None = None, parent=None):
         super().__init__(parent)
+        # TOC 解析由来の明示的な終了ページ(1始まり, inclusive)。None なら次章直前まで
+        # 自動計算する従来の連続モデル。除外行のギャップを保持するために使う。
+        self.explicit_end = end_page
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 2, 0, 2)
 
@@ -131,14 +135,17 @@ class PdfSplitDialog(QDialog):
 
         layout.addLayout(button_layout)
 
-    def _add_chapter_row(self, name: str, start_page: int) -> _ChapterRow:
-        """章の行を追加"""
+    def _add_chapter_row(self, name: str, start_page: int, end_page: int | None = None) -> _ChapterRow:
+        """章の行を追加。end_page を渡すと終了ページを固定（除外行のギャップ保持用）"""
         row = _ChapterRow(
             index=len(self._chapter_rows),
             name=name,
             start_page=start_page,
             max_page=self.page_count,
+            end_page=end_page,
         )
+        # 開始ページを手動変更したら固定終了を解除し従来の連続モデルに戻す
+        row.start_spin.valueChanged.connect(lambda _v, r=row: setattr(r, "explicit_end", None))
         row.start_spin.valueChanged.connect(self._update_ranges)
         row.delete_btn.clicked.connect(lambda: self._remove_chapter_row(row))
 
@@ -161,15 +168,25 @@ class PdfSplitDialog(QDialog):
         self._chapter_rows[0].delete_btn.setEnabled(False)
         self._update_ranges()
 
+    def _row_end(self, row: _ChapterRow, rows: list, i: int) -> int:
+        """行の終了ページ(1始まり, inclusive)。明示的 end があればそれを、
+        なければ次章直前まで（最終章は最終ページ）を返す。
+
+        明示的 end は必ず「次章の開始直前」を上限にクランプする。これにより
+        隣の行の開始を手前に動かしても章範囲が重複しない（ギャップは保持）。"""
+        start = row.start_spin.value()
+        # 連続モデルでの上限（次章の直前 / 最終章は最終ページ）
+        contiguous = rows[i + 1].start_spin.value() - 1 if i < len(rows) - 1 else self.page_count
+        if row.explicit_end is not None and row.explicit_end >= start:
+            return min(row.explicit_end, contiguous, self.page_count)
+        return contiguous
+
     def _update_ranges(self):
         """各章のページ範囲ラベルを更新"""
         rows = sorted(self._chapter_rows, key=lambda r: r.start_spin.value())
         for i, row in enumerate(rows):
             start = row.start_spin.value()
-            if i < len(rows) - 1:
-                end = rows[i + 1].start_spin.value() - 1
-            else:
-                end = self.page_count
+            end = self._row_end(row, rows, i)
 
             if end < start:
                 row.range_label.setText(f"→ 0ページ")
@@ -194,8 +211,8 @@ class PdfSplitDialog(QDialog):
         """目次解析ダイアログを開き、確定したら章行を置換"""
         from src.ui.pdf_toc_analyze_dialog import PdfTocAnalyzeDialog
         dialog = PdfTocAnalyzeDialog(self.pdf_path, self.page_count, parent=self)
-        if dialog.exec() and dialog.result_ranges:
-            self._apply_toc_ranges(dialog.result_ranges)
+        if dialog.exec() and dialog.selected_ranges:
+            self._apply_toc_ranges(dialog.selected_ranges)
 
     def _apply_toc_ranges(self, ranges: list[ChapterRange]):
         """解析結果で章行を全置換する（start は0始まり→1始まりの開始ページへ）"""
@@ -204,9 +221,9 @@ class PdfSplitDialog(QDialog):
             self._rows_layout.removeWidget(row)
             row.deleteLater()
         self._chapter_rows.clear()
-        # 新規行を生成
+        # 新規行を生成（start/end を明示指定し、除外行のギャップを保持する）
         for r in ranges:
-            self._add_chapter_row(r.name, r.start + 1)
+            self._add_chapter_row(r.name, r.start + 1, r.end + 1)
         self._update_ranges()
 
     def _build_chapters(self) -> list[Chapter] | None:
@@ -237,10 +254,7 @@ class PdfSplitDialog(QDialog):
         chapters = []
         for i, row in enumerate(rows):
             start = row.start_spin.value() - 1  # 0-indexed
-            if i < len(rows) - 1:
-                end = rows[i + 1].start_spin.value() - 2  # 0-indexed, inclusive
-            else:
-                end = self.page_count - 1
+            end = self._row_end(row, rows, i) - 1  # 0-indexed, inclusive
             name = row.name_edit.text().strip() or f"第{i + 1}章"
             chapters.append(Chapter(name=name, start=start, end=end))
 
