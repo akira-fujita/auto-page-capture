@@ -16,6 +16,31 @@ from src.export.pdf_splitter import PdfSplitter
 from src.export.toc_analyzer import ChapterRange
 
 
+def excluded_page_ranges(spans: list[tuple[int, int]], total_pages: int) -> list[tuple[int, int]]:
+    """章に含まれないページ範囲を求める。
+
+    spans: 各章の (start, end) 0始まり包含。total_pages: 総ページ数。
+    戻り値: 除外ページの (start, end) を1始まり包含で、昇順に返す。
+    """
+    covered = set()
+    for start, end in spans:
+        for p in range(max(0, start), min(total_pages, end + 1)):
+            covered.add(p)
+    ranges: list[tuple[int, int]] = []
+    run_start = None
+    for p in range(total_pages):
+        if p not in covered:
+            if run_start is None:
+                run_start = p
+        else:
+            if run_start is not None:
+                ranges.append((run_start + 1, p))  # 1始まり包含
+                run_start = None
+    if run_start is not None:
+        ranges.append((run_start + 1, total_pages))
+    return ranges
+
+
 class _ChapterRow(QWidget):
     """章1行分の入力ウィジェット"""
 
@@ -108,6 +133,12 @@ class PdfSplitDialog(QDialog):
 
         layout.addWidget(chapter_group)
 
+        # 除外されるページ（どの章にも含まれないページ）の表示
+        self.excluded_label = QLabel()
+        self.excluded_label.setWordWrap(True)
+        self.excluded_label.setStyleSheet("color: #d32f2f; margin: 2px 0;")
+        layout.addWidget(self.excluded_label)
+
         # 出力先
         output_group = QGroupBox("出力先")
         output_layout = QHBoxLayout(output_group)
@@ -182,8 +213,9 @@ class PdfSplitDialog(QDialog):
         return contiguous
 
     def _update_ranges(self):
-        """各章のページ範囲ラベルを更新"""
+        """各章のページ範囲ラベルと、除外ページのサマリを更新"""
         rows = sorted(self._chapter_rows, key=lambda r: r.start_spin.value())
+        spans: list[tuple[int, int]] = []
         for i, row in enumerate(rows):
             start = row.start_spin.value()
             end = self._row_end(row, rows, i)
@@ -194,6 +226,20 @@ class PdfSplitDialog(QDialog):
             else:
                 row.range_label.setText(f"→ p.{start}-{end}")
                 row.range_label.setStyleSheet("color: #666; min-width: 100px;")
+                spans.append((start - 1, end - 1))  # 0始まり包含
+
+        self._update_excluded_label(spans)
+
+    def _update_excluded_label(self, spans: list[tuple[int, int]]):
+        excluded = excluded_page_ranges(spans, self.page_count)
+        if not excluded:
+            self.excluded_label.setText("すべてのページがいずれかの章に含まれます。")
+            self.excluded_label.setStyleSheet("color: #666; margin: 2px 0;")
+            return
+        total = sum(e - s + 1 for s, e in excluded)
+        parts = ", ".join(f"p.{s}" if s == e else f"p.{s}-{e}" for s, e in excluded)
+        self.excluded_label.setText(f"⚠ 出力されないページ: {parts}（計{total}ページ）")
+        self.excluded_label.setStyleSheet("color: #d32f2f; margin: 2px 0;")
 
     def _on_add_chapter(self):
         """章追加ボタン"""
