@@ -97,3 +97,17 @@ def test_analyze_failure_resets_state(qapp, monkeypatch):
     d._run_analyze()
     assert d.result_ranges == []
     assert d.apply_btn.isEnabled() is False
+
+
+def test_analyze_file_not_found_resets_state(qapp, monkeypatch):
+    class _Missing:
+        def analyze(self, paths):
+            raise FileNotFoundError("claude not found")
+    splitter = _FakeSplitter()
+    d = PdfTocAnalyzeDialog(Path("/tmp/b.pdf"), 188, engine=_Missing(), splitter=splitter)
+    monkeypatch.setattr(
+        "src.ui.pdf_toc_analyze_dialog.QMessageBox.critical", lambda *a, **k: None
+    )
+    d._run_analyze()
+    assert d.result_ranges == []
+    assert d.apply_btn.isEnabled() is False

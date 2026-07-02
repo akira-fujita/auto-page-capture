@@ -83,10 +83,15 @@ class PdfTocAnalyzeDialog(QDialog):
 
         # ライブ更新
         self.toc_start_spin.valueChanged.connect(self._update_labels)
+        self.toc_start_spin.valueChanged.connect(self._sync_toc_end_min)
         self.toc_end_spin.valueChanged.connect(self._update_labels)
         self.anchor_printed_spin.valueChanged.connect(self._on_anchor_changed)
         self.anchor_pdf_spin.valueChanged.connect(self._on_anchor_changed)
+        self._sync_toc_end_min(self.toc_start_spin.value())
         self._update_labels()
+
+    def _sync_toc_end_min(self, start_value: int):
+        self.toc_end_spin.setMinimum(start_value)
 
     def _update_labels(self):
         start, end = self.toc_start_spin.value(), self.toc_end_spin.value()
@@ -121,15 +126,14 @@ class PdfTocAnalyzeDialog(QDialog):
                 self._entries = self.engine.analyze(paths)
         except FileNotFoundError:
             self._reset_state()
-            QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, "エラー", "claude CLI が見つかりませんでした。手動でページを入力してください。")
             return
         except Exception as e:
             self._reset_state()
-            QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, "エラー", f"目次の解析に失敗しました:\n{e}\n\n手動でページを入力してください。")
             return
-        QApplication.restoreOverrideCursor()
+        finally:
+            QApplication.restoreOverrideCursor()
         self._recompute()
 
     def _reset_state(self):
