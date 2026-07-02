@@ -87,6 +87,7 @@ class PdfTocAnalyzeDialog(QDialog):
         self.toc_end_spin.valueChanged.connect(self._update_labels)
         self.anchor_printed_spin.valueChanged.connect(self._on_anchor_changed)
         self.anchor_pdf_spin.valueChanged.connect(self._on_anchor_changed)
+        self.preface_check.toggled.connect(self._on_preface_toggled)
         self._sync_toc_end_min(self.toc_start_spin.value())
         self._update_labels()
 
@@ -105,6 +106,10 @@ class PdfTocAnalyzeDialog(QDialog):
 
     def _on_anchor_changed(self, _v):
         self._update_labels()
+        if self._entries:
+            self._recompute()
+
+    def _on_preface_toggled(self, _checked: bool):
         if self._entries:
             self._recompute()
 

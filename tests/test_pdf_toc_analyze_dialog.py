@@ -111,3 +111,22 @@ def test_analyze_file_not_found_resets_state(qapp, monkeypatch):
     d._run_analyze()
     assert d.result_ranges == []
     assert d.apply_btn.isEnabled() is False
+
+
+def test_preface_check_toggle_triggers_recompute(qapp):
+    """FIX 1: preface_check の toggled シグナルが _recompute を呼ぶこと"""
+    # offset=10: 第1章 start = 1 + 10 - 1 = 10 > 0 → 前付けが生まれる
+    d, engine, splitter = _dialog([TocEntry("第1章", 1)], page_count=188)
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(11)  # offset = 11 - 1 = 10
+    d._run_analyze()
+    # 前付けなしの状態を確認
+    assert d.result_ranges[0].name != "前付け"
+
+    # True に切り替え → 自動で recompute → 前付けが先頭に来る
+    d.preface_check.setChecked(True)
+    assert d.result_ranges[0].name == "前付け"
+
+    # False に戻す → 前付けが消える
+    d.preface_check.setChecked(False)
+    assert d.result_ranges[0].name != "前付け"

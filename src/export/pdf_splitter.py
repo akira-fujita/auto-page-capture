@@ -29,8 +29,12 @@ class PdfSplitter:
             kCFAllocatorDefault, str(pdf_path), kCFURLPOSIXPathStyle, False
         )
         pdf_doc = Quartz.CGPDFDocumentCreateWithURL(url)
+        if pdf_doc is None:
+            raise RuntimeError(f"PDFを読み込めませんでした: {pdf_path}")
         # CGPDFDocument のページ番号は 1-indexed
         page = Quartz.CGPDFDocumentGetPage(pdf_doc, page_index + 1)
+        if page is None:
+            raise RuntimeError(f"PDFページを読み込めませんでした (page {page_index + 1})")
 
         page_rect = Quartz.CGPDFPageGetBoxRect(page, Quartz.kCGPDFMediaBox)
         page_width = page_rect.size.width
