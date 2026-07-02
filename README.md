@@ -15,7 +15,7 @@ A macOS desktop tool that automatically captures Kindle app pages and converts t
 - **既存PDF分割** / **PDF splitting** — 既存のPDFファイルを章ごとに分割（開始ページ指定・サムネイルプレビュー付き） / Split existing PDF files into chapters with start page configuration and thumbnail preview
 - **デスクトップ通知** / **Desktop notifications** — キャプチャ完了・PDF出力完了時にmacOS通知 / Notifies on capture and export completion
 - **テキスト埋め込み (OCR)** / **Embedded text (OCR)** — macOS Visionで認識したテキストレイヤーをPDFに重ねる（NotebookLMの精度向上） / Overlays a Vision-recognized text layer onto the PDF (improves NotebookLM accuracy)
-- **目次から章を自動解析** / **Auto chapter detection from TOC** — キャプチャした目次ページを `claude` CLI に解析させ、章名とページ番号から章境界を自動算出（印刷ページとキャプチャ枚数のズレはアンカー1点で補正） / Parse a captured table-of-contents via the `claude` CLI to auto-detect chapter boundaries (a one-point page anchor bridges printed vs captured page numbers)
+- **目次から章を自動解析** / **Auto chapter detection from TOC** — 目次ページを `claude` CLI に解析させ、章名とページ番号から章の区切り（開始ページ）を自動入力。キャプチャフローと既存PDF分割の両方で使え、印刷ページと実ページのズレはアンカー1点（印刷p.X = キャプチャ/PDF #Y）で補正 / Parse the table-of-contents pages via the `claude` CLI to auto-fill chapter start pages. Works in both the capture flow and the existing-PDF split flow; a one-point page anchor (printed p.X = capture/PDF #Y) bridges printed vs actual page numbers
 
 ## 必要環境 / Requirements
 
