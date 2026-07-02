@@ -29,8 +29,12 @@ class PdfSplitter:
             kCFAllocatorDefault, str(pdf_path), kCFURLPOSIXPathStyle, False
         )
         pdf_doc = Quartz.CGPDFDocumentCreateWithURL(url)
+        if pdf_doc is None:
+            raise RuntimeError(f"PDFを読み込めませんでした: {pdf_path}")
         # CGPDFDocument のページ番号は 1-indexed
         page = Quartz.CGPDFDocumentGetPage(pdf_doc, page_index + 1)
+        if page is None:
+            raise RuntimeError(f"PDFページを読み込めませんでした (page {page_index + 1})")
 
         page_rect = Quartz.CGPDFPageGetBoxRect(page, Quartz.kCGPDFMediaBox)
         page_width = page_rect.size.width
@@ -67,6 +71,18 @@ class PdfSplitter:
         qimage = QImage(data, width, height, bytes_per_row, QImage.Format.Format_ARGB32_Premultiplied)
         pixmap = QPixmap.fromImage(qimage.copy())
         return pixmap
+
+    def render_page_image(
+        self, pdf_path: Path, page_index: int, output_path: Path, max_height: int = 2000
+    ) -> Path:
+        """PDFページを高解像度PNGとして保存し、そのパスを返す。
+
+        max_height は OCR 品質を左右する解像度ノブ。
+        """
+        pixmap = self.render_page_thumbnail(pdf_path, page_index, max_height=max_height)
+        if not pixmap.save(str(output_path), "PNG"):
+            raise RuntimeError(f"PDFページ画像の保存に失敗しました: {output_path}")
+        return output_path
 
     def split(self, pdf_path: Path, chapters: list, output_dir: Path) -> list[Path]:
         """PDFを章ごとに分割して保存

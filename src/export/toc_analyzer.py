@@ -124,7 +124,10 @@ class ClaudeTocEngine:
         # --output-format json は {"result": "<assistantのテキスト>"} を返す
         try:
             payload = json.loads(result.stdout)
-            inner = payload.get("result", result.stdout)
+            if isinstance(payload, dict):
+                inner = payload.get("result", result.stdout)
+            else:
+                inner = result.stdout
         except json.JSONDecodeError:
             inner = result.stdout
         return _extract_entries(inner)

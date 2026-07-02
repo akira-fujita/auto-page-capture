@@ -102,3 +102,17 @@ def test_claude_engine_raises_on_nonzero_returncode(monkeypatch):
     )
     with pytest.raises(RuntimeError):
         ClaudeTocEngine().analyze([Path("/tmp/x.png")])
+
+
+def test_claude_engine_bare_json_array_outer_payload(monkeypatch):
+    """FIX 2: outer payload が dict でない(bare JSON array)場合、AttributeError を起こさずエントリを返す"""
+    class _BareArrayResult:
+        returncode = 0
+        stderr = ""
+        stdout = '[{"name": "第1章", "page": 1}]'
+
+    monkeypatch.setattr(
+        "src.export.toc_analyzer.subprocess.run", lambda *a, **kw: _BareArrayResult()
+    )
+    entries = ClaudeTocEngine().analyze([Path("/tmp/x.png")])
+    assert entries == [TocEntry("第1章", 1)]
