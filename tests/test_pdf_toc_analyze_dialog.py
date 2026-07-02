@@ -181,6 +181,20 @@ def test_manual_uncheck_updates_selected_and_apply(qapp):
     assert d.apply_btn.isEnabled() is True
 
 
+def test_selection_survives_anchor_change(qapp):
+    """章のみ/手動選択がアンカー変更(recompute)で失われないこと"""
+    d, engine, splitter = _dialog(_mixed_entries())
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(17)
+    d._run_analyze()
+    d._on_chapter_only()
+    before = [c.name for c in d.selected_ranges]
+    assert before == ["1章 シンプリシティ", "2章 今すぐ減量を"]
+    # アンカー変更で recompute が走っても選択は維持される
+    d.anchor_pdf_spin.setValue(18)
+    assert [c.name for c in d.selected_ranges] == before
+
+
 def test_preface_check_toggle_triggers_recompute(qapp):
     """FIX 1: preface_check の toggled シグナルが _recompute を呼ぶこと"""
     # offset=10: 第1章 start = 1 + 10 - 1 = 10 > 0 → 前付けが生まれる

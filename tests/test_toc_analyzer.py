@@ -127,6 +127,8 @@ def test_is_chapter_true(name):
     "付録A データ形式",
     "はじめに",
     "2024 年の記録",  # 先頭が章でない → 誤検出しない
+    "Chapter 3a Appendix",  # 数字の後に文字 → 章番号ではない
+    "Chapter 12b",
 ])
 def test_is_chapter_false(name):
     assert is_chapter(name) is False

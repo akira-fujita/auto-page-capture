@@ -67,3 +67,26 @@ def test_open_toc_analyze_uses_selected_ranges(qapp, pdf_path, monkeypatch):
     dialog = PdfSplitDialog(pdf_path)
     dialog._open_toc_analyze()
     assert [r.name_edit.text() for r in dialog._chapter_rows] == ["1章", "2章"]
+
+
+def test_selected_ranges_preserve_gaps_not_absorbed(qapp, pdf_path, monkeypatch):
+    """除外行のページが隣接章に吸収されないこと（範囲不変）"""
+    class _FakeDialog:
+        # 第I部(page5)と巻末(page9)を除外した想定。ギャップが空く。
+        selected_ranges = [ChapterRange("1章", 0, 4), ChapterRange("2章", 6, 7)]
+
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(
+        "src.ui.pdf_toc_analyze_dialog.PdfTocAnalyzeDialog", _FakeDialog
+    )
+    dialog = PdfSplitDialog(pdf_path)
+    dialog._open_toc_analyze()
+    chapters = dialog._build_chapters()
+    # 1章は page5 を吸収せず 0..4、2章は末尾を吸収せず 6..7 のまま
+    assert (chapters[0].start, chapters[0].end) == (0, 4)
+    assert (chapters[1].start, chapters[1].end) == (6, 7)

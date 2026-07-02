@@ -41,7 +41,7 @@ _CHAPTER_PATTERNS = [
     re.compile(r"^第?\s*[0-9０-９]+\s*章"),            # 第1章 / 1章 / １章
     re.compile(r"^第?\s*[一二三四五六七八九十百]+\s*章"),  # 第一章
     re.compile(r"^(序章|終章)"),
-    re.compile(r"^chapter\s+\d+", re.IGNORECASE),      # Chapter 1
+    re.compile(r"^chapter\s+\d+(?![0-9A-Za-z])", re.IGNORECASE),  # Chapter 1（Chapter 3a は除外）
 ]
 
 

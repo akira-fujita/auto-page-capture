@@ -122,11 +122,11 @@ class PdfTocAnalyzeDialog(QDialog):
     def _on_anchor_changed(self, _v):
         self._update_labels()
         if self._entries:
-            self._recompute()
+            self._recompute(reset_selection=False)
 
     def _on_preface_toggled(self, _checked: bool):
         if self._entries:
-            self._recompute()
+            self._recompute(reset_selection=False)
 
     def _selected_page_indices(self) -> list[int]:
         start = self.toc_start_spin.value()
@@ -163,7 +163,7 @@ class PdfTocAnalyzeDialog(QDialog):
         self._refresh_table()
         self.apply_btn.setEnabled(False)
 
-    def _recompute(self):
+    def _recompute(self, reset_selection: bool = True):
         offset = compute_offset(self.anchor_pdf_spin.value(), self.anchor_printed_spin.value())
         ranges, warnings = entries_to_chapters(self._entries, offset, self.page_count)
         # 前付けオプション
@@ -171,7 +171,7 @@ class PdfTocAnalyzeDialog(QDialog):
             ranges = [ChapterRange("前付け", 0, ranges[0].start - 1)] + ranges
         self.result_ranges = ranges
         self.warnings = warnings
-        self._refresh_table()
+        self._refresh_table(reset_selection=reset_selection)
 
     @property
     def selected_ranges(self) -> list[ChapterRange]:
@@ -183,14 +183,28 @@ class PdfTocAnalyzeDialog(QDialog):
                 selected.append(c)
         return selected
 
-    def _refresh_table(self):
+    def _refresh_table(self, reset_selection: bool = True):
+        # 再計算(アンカー/前付け変更)では選択状態を保持する。
+        # 名前ごとに「以前チェックされていたか」を控え、新規行はチェック済みにする。
+        prior_checked, prior_names = set(), set()
+        if not reset_selection:
+            for i in range(self.table.rowCount()):
+                name_item = self.table.item(i, 1)
+                if name_item is None:
+                    continue
+                prior_names.add(name_item.text())
+                if self.table.item(i, 0).checkState() == Qt.CheckState.Checked:
+                    prior_checked.add(name_item.text())
+
         # 行を作り直す間は itemChanged が誤発火しないようブロックする
         self.table.blockSignals(True)
         self.table.setRowCount(len(self.result_ranges))
         for i, c in enumerate(self.result_ranges):
             check = QTableWidgetItem()
             check.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            check.setCheckState(Qt.CheckState.Checked)  # 解析直後は全チェック
+            # reset時は全チェック。保持時は以前チェック済み or 新規行のみチェック
+            keep = reset_selection or (c.name in prior_checked) or (c.name not in prior_names)
+            check.setCheckState(Qt.CheckState.Checked if keep else Qt.CheckState.Unchecked)
             self.table.setItem(i, 0, check)
             self.table.setItem(i, 1, QTableWidgetItem(c.name))
             self.table.setItem(i, 2, QTableWidgetItem(f"p.{c.start + 1}-{c.end + 1}"))
