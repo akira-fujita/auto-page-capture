@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,38 @@ def test_claude_engine_invokes_cli_and_parses(monkeypatch):
     # 画像パスがプロンプトに含まれる
     joined = " ".join(captured["cmd"])
     assert "toc1.png" in joined and "toc2.png" in joined
+
+
+def test_claude_engine_runs_in_image_dir_with_basenames(monkeypatch):
+    """権限対策: cwd=画像ディレクトリ、ベース名参照、stdin は閉じる。
+
+    絶対パス(cwd外)だと claude が Read 権限で弾かれるため、画像の親を
+    cwd にして相対のベース名で渡す。
+    """
+    captured = {}
+
+    class _Result:
+        stdout = json.dumps({"result": '[{"name": "第1章", "page": 1}]'})
+        returncode = 0
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return _Result()
+
+    monkeypatch.setattr("src.export.toc_analyzer.subprocess.run", fake_run)
+    ClaudeTocEngine().analyze([Path("/var/folders/xx/T/tmpABC/toc_12.png"),
+                               Path("/var/folders/xx/T/tmpABC/toc_13.png")])
+
+    assert captured["kwargs"].get("cwd") == "/var/folders/xx/T/tmpABC"
+    assert captured["kwargs"].get("stdin") == subprocess.DEVNULL
+    joined = " ".join(captured["cmd"])
+    # 絶対パスではなくベース名で渡っている
+    assert "toc_12.png" in joined and "toc_13.png" in joined
+    assert "/var/folders/xx/T/tmpABC/toc_12.png" not in joined
+    # --allowedTools は使わない(可変長引数がプロンプトを食うため)
+    assert "--allowedTools" not in captured["cmd"]
 
 
 def test_claude_engine_raises_on_nonzero_returncode(monkeypatch):

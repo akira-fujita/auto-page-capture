@@ -110,13 +110,26 @@ class ClaudeTocEngine:
         self.timeout = timeout
 
     def analyze(self, image_paths: list[Path]) -> list[TocEntry]:
-        paths = ", ".join(str(p) for p in image_paths)
-        prompt = _PROMPT_TEMPLATE.format(paths=paths)
+        if not image_paths:
+            return []
+        # ヘッドレスの claude はワーキングディレクトリ配下のファイルしか
+        # 追加許可なしで Read できない。画像の親を cwd にして相対のベース名で
+        # 渡すことで /var/folders 等の一時パスでも読めるようにする。
+        workdir = image_paths[0].parent
+        refs = []
+        for p in image_paths:
+            try:
+                refs.append(str(p.relative_to(workdir)))
+            except ValueError:
+                refs.append(str(p))  # 別ディレクトリの画像は絶対パスで
+        prompt = _PROMPT_TEMPLATE.format(paths=", ".join(refs))
         result = subprocess.run(
             ["claude", "-p", "--output-format", "json", prompt],
             capture_output=True,
             text=True,
             timeout=self.timeout,
+            cwd=str(workdir),
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
