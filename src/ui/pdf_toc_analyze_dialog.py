@@ -184,26 +184,32 @@ class PdfTocAnalyzeDialog(QDialog):
         return selected
 
     def _refresh_table(self, reset_selection: bool = True):
-        # 再計算(アンカー/前付け変更)では選択状態を保持する。
-        # 名前ごとに「以前チェックされていたか」を控え、新規行はチェック済みにする。
-        prior_checked, prior_names = set(), set()
+        # 再計算(アンカー/前付け変更)では選択状態を保持する。名前ごとに以前の
+        # チェック状態を出現順で控え、同名行も位置で区別する。新規名はチェック済み。
+        prior: dict[str, list[bool]] = {}
         if not reset_selection:
             for i in range(self.table.rowCount()):
                 name_item = self.table.item(i, 1)
                 if name_item is None:
                     continue
-                prior_names.add(name_item.text())
-                if self.table.item(i, 0).checkState() == Qt.CheckState.Checked:
-                    prior_checked.add(name_item.text())
+                checked = self.table.item(i, 0).checkState() == Qt.CheckState.Checked
+                prior.setdefault(name_item.text(), []).append(checked)
 
         # 行を作り直す間は itemChanged が誤発火しないようブロックする
         self.table.blockSignals(True)
         self.table.setRowCount(len(self.result_ranges))
+        consumed: dict[str, int] = {}
         for i, c in enumerate(self.result_ranges):
             check = QTableWidgetItem()
             check.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            # reset時は全チェック。保持時は以前チェック済み or 新規行のみチェック
-            keep = reset_selection or (c.name in prior_checked) or (c.name not in prior_names)
+            if reset_selection:
+                keep = True
+            else:
+                states = prior.get(c.name)
+                idx = consumed.get(c.name, 0)
+                # 既知の名前は出現順で対応、未知/超過分はチェック済み(新規扱い)
+                keep = states[idx] if states is not None and idx < len(states) else True
+                consumed[c.name] = idx + 1
             check.setCheckState(Qt.CheckState.Checked if keep else Qt.CheckState.Unchecked)
             self.table.setItem(i, 0, check)
             self.table.setItem(i, 1, QTableWidgetItem(c.name))

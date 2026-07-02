@@ -90,3 +90,28 @@ def test_selected_ranges_preserve_gaps_not_absorbed(qapp, pdf_path, monkeypatch)
     # 1章は page5 を吸収せず 0..4、2章は末尾を吸収せず 6..7 のまま
     assert (chapters[0].start, chapters[0].end) == (0, 4)
     assert (chapters[1].start, chapters[1].end) == (6, 7)
+
+
+def test_editing_start_does_not_cause_overlap(qapp, pdf_path, monkeypatch):
+    """TOC由来の start を隣の explicit_end より手前に動かしても重複出力しない"""
+    class _FakeDialog:
+        selected_ranges = [ChapterRange("1章", 0, 4), ChapterRange("2章", 6, 7)]
+
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(
+        "src.ui.pdf_toc_analyze_dialog.PdfTocAnalyzeDialog", _FakeDialog
+    )
+    dialog = PdfSplitDialog(pdf_path)
+    dialog._open_toc_analyze()
+    # 2章の開始を p.4 (=index3) に手前へ動かす（1章の explicit_end=5 と衝突しうる）
+    rows = sorted(dialog._chapter_rows, key=lambda r: r.start_spin.value())
+    rows[1].start_spin.setValue(4)
+    chapters = dialog._build_chapters()
+    chapters.sort(key=lambda c: c.start)
+    # 章範囲が重複しない（前章 end < 次章 start）
+    assert chapters[0].end < chapters[1].start

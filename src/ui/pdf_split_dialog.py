@@ -170,13 +170,16 @@ class PdfSplitDialog(QDialog):
 
     def _row_end(self, row: _ChapterRow, rows: list, i: int) -> int:
         """行の終了ページ(1始まり, inclusive)。明示的 end があればそれを、
-        なければ次章直前まで（最終章は最終ページ）を返す。"""
+        なければ次章直前まで（最終章は最終ページ）を返す。
+
+        明示的 end は必ず「次章の開始直前」を上限にクランプする。これにより
+        隣の行の開始を手前に動かしても章範囲が重複しない（ギャップは保持）。"""
         start = row.start_spin.value()
+        # 連続モデルでの上限（次章の直前 / 最終章は最終ページ）
+        contiguous = rows[i + 1].start_spin.value() - 1 if i < len(rows) - 1 else self.page_count
         if row.explicit_end is not None and row.explicit_end >= start:
-            return min(row.explicit_end, self.page_count)
-        if i < len(rows) - 1:
-            return rows[i + 1].start_spin.value() - 1
-        return self.page_count
+            return min(row.explicit_end, contiguous, self.page_count)
+        return contiguous
 
     def _update_ranges(self):
         """各章のページ範囲ラベルを更新"""

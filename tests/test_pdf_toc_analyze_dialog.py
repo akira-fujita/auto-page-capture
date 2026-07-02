@@ -195,6 +195,22 @@ def test_selection_survives_anchor_change(qapp):
     assert [c.name for c in d.selected_ranges] == before
 
 
+def test_selection_preserved_for_duplicate_names(qapp):
+    """同名の行が複数あっても、どの行を外したかが recompute で保持される"""
+    from PyQt6.QtCore import Qt
+    entries = [TocEntry("同名", 10), TocEntry("同名", 20), TocEntry("2章", 30)]
+    d, engine, splitter = _dialog(entries)
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(1)  # offset 0
+    d._run_analyze()
+    # 先頭の「同名」だけ外す
+    d.table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    # アンカー変更で recompute（非リセット）
+    d.anchor_pdf_spin.setValue(2)
+    assert d.table.item(0, 0).checkState() == Qt.CheckState.Unchecked  # 外した行は維持
+    assert d.table.item(1, 0).checkState() == Qt.CheckState.Checked    # もう一方は維持
+
+
 def test_preface_check_toggle_triggers_recompute(qapp):
     """FIX 1: preface_check の toggled シグナルが _recompute を呼ぶこと"""
     # offset=10: 第1章 start = 1 + 10 - 1 = 10 > 0 → 前付けが生まれる
