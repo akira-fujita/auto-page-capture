@@ -6,7 +6,7 @@ import pytest
 
 from src.export.toc_analyzer import (
     TocEntry, ChapterRange, compute_offset, entries_to_chapters,
-    _extract_entries, ClaudeTocEngine,
+    _extract_entries, _parse_page, ClaudeTocEngine,
 )
 
 
@@ -67,6 +67,75 @@ def test_extract_entries_with_codeblock_and_prose():
 def test_extract_entries_raises_on_garbage():
     with pytest.raises(ValueError):
         _extract_entries("ページ番号が読めませんでした")
+
+
+def test_extract_entries_roman_page_marked_front_matter():
+    """ローマ数字ページ(前付け)は printed_page=None かつ roman_page に原文を保持"""
+    out = '[{"name": "もう一度、世界を変えよう", "page": "vii"}]'
+    entries = _extract_entries(out)
+    assert entries == [TocEntry("もう一度、世界を変えよう", None, "vii")]
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (7, (7, None)),
+    ("7", (7, None)),
+    ("007", (7, None)),
+    ("vii", (None, "vii")),
+    ("xiv", (None, "xiv")),
+    ("VII", (None, "VII")),
+    ("iv", (None, "iv")),
+    ("i", (None, "i")),
+    ("xl", (None, "xl")),
+])
+def test_parse_page_valid(raw, expected):
+    assert _parse_page(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["iiii", "vx", "civil", "", "   ", "7a", "7-8", "vv"])
+def test_parse_page_invalid_raises(raw):
+    """無効なローマ数字並び・非数値は前付け誤認せず ValueError"""
+    with pytest.raises(ValueError):
+        _parse_page(raw)
+
+
+def test_parse_page_bool_rejected():
+    with pytest.raises(ValueError):
+        _parse_page(True)
+
+
+def test_extract_entries_arabic_string_page_becomes_int():
+    """アラビア数字が文字列で来ても int に正規化する"""
+    out = '[{"name": "第1章", "page": "7"}]'
+    entries = _extract_entries(out)
+    assert entries == [TocEntry("第1章", 7)]
+
+
+def test_entries_to_chapters_excludes_front_matter_with_warning():
+    entries = [
+        TocEntry("序文", None, "vii"),
+        TocEntry("第1章", 1),
+    ]
+    chapters, warnings = entries_to_chapters(entries, offset=7, total_pages=60)
+    assert [c.name for c in chapters] == ["第1章"]
+    assert len(warnings) == 1
+    assert "序文" in warnings[0]
+
+
+def test_entries_to_chapters_front_matter_does_not_evict_body_chapter():
+    """回帰: 前付け(vii→7誤読相当)が本文2章(p.7)を重複除外で押し出さない"""
+    entries = [
+        TocEntry("もう一度、世界を変えよう", None, "vii"),  # 前付け
+        TocEntry("1章", 1),
+        TocEntry("2章 今すぐ減量を", 7),  # 本文。前付けvii と同ページ空間で衝突していた
+        TocEntry("3章", 25),
+    ]
+    chapters, _ = entries_to_chapters(entries, offset=16, total_pages=200)
+    names = [c.name for c in chapters]
+    assert "2章 今すぐ減量を" in names
+    assert "もう一度、世界を変えよう" not in names
+    # 2章 の start は印刷p.7 → 7+16-1 = 22, end は 3章start-1 = (25+16-1)-1 = 39
+    ch2 = next(c for c in chapters if c.name == "2章 今すぐ減量を")
+    assert (ch2.start, ch2.end) == (22, 39)
 
 
 def test_claude_engine_invokes_cli_and_parses(monkeypatch):
