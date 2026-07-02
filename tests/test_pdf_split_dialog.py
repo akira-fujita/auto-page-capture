@@ -11,7 +11,22 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
 from src.export.toc_analyzer import ChapterRange
-from src.ui.pdf_split_dialog import PdfSplitDialog
+from src.ui.pdf_split_dialog import PdfSplitDialog, excluded_page_ranges
+
+
+def test_excluded_page_ranges_basic():
+    # chapters(0始まり包含): 16-19, 22-39 / 全40ページ
+    # 除外index: 0-15, 20-21 → 1始まり p.1-16, p.21-22
+    assert excluded_page_ranges([(16, 19), (22, 39)], 40) == [(1, 16), (21, 22)]
+
+
+def test_excluded_page_ranges_trailing_backmatter():
+    # 最終章が末尾前で止まる → 末尾が除外される
+    assert excluded_page_ranges([(0, 3)], 10) == [(5, 10)]
+
+
+def test_excluded_page_ranges_none_when_contiguous():
+    assert excluded_page_ranges([(0, 4), (5, 9)], 10) == []
 
 
 @pytest.fixture(scope="module")
@@ -116,6 +131,9 @@ def test_editing_start_does_not_cause_overlap(qapp, pdf_path, monkeypatch):
     )
     dialog = PdfSplitDialog(pdf_path)
     dialog._open_toc_analyze()
+    # 除外ページのサマリが表示される（index5→p.6, 末尾 idx8,9→p.9-10）
+    txt = dialog.excluded_label.text()
+    assert "p.6" in txt and "p.9-10" in txt
     # 2章の開始を p.4 (=index3) に手前へ動かす（1章の explicit_end=5 と衝突しうる）
     rows = sorted(dialog._chapter_rows, key=lambda r: r.start_spin.value())
     rows[1].start_spin.setValue(4)
