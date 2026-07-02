@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 
 from src.ui.chapter_dialog import Chapter
 from src.export.pdf_splitter import PdfSplitter
+from src.export.toc_analyzer import ChapterRange
 
 
 class _ChapterRow(QWidget):
@@ -74,6 +75,10 @@ class PdfSplitDialog(QDialog):
         )
         info.setStyleSheet("color: #666; margin-bottom: 8px;")
         layout.addWidget(info)
+
+        toc_btn = QPushButton("目次から章を自動解析")
+        toc_btn.clicked.connect(self._open_toc_analyze)
+        layout.addWidget(toc_btn)
 
         # 章リスト
         chapter_group = QGroupBox("章一覧")
@@ -183,6 +188,25 @@ class PdfSplitDialog(QDialog):
             default_start = 1
         num = len(self._chapter_rows) + 1
         self._add_chapter_row(f"第{num}章", default_start)
+        self._update_ranges()
+
+    def _open_toc_analyze(self):
+        """目次解析ダイアログを開き、確定したら章行を置換"""
+        from src.ui.pdf_toc_analyze_dialog import PdfTocAnalyzeDialog
+        dialog = PdfTocAnalyzeDialog(self.pdf_path, self.page_count, parent=self)
+        if dialog.exec() and dialog.result_ranges:
+            self._apply_toc_ranges(dialog.result_ranges)
+
+    def _apply_toc_ranges(self, ranges: list[ChapterRange]):
+        """解析結果で章行を全置換する（start は0始まり→1始まりの開始ページへ）"""
+        # 既存行を全消去
+        for row in list(self._chapter_rows):
+            self._rows_layout.removeWidget(row)
+            row.deleteLater()
+        self._chapter_rows.clear()
+        # 新規行を生成
+        for r in ranges:
+            self._add_chapter_row(r.name, r.start + 1)
         self._update_ranges()
 
     def _build_chapters(self) -> list[Chapter] | None:
