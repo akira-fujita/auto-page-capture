@@ -11,6 +11,9 @@ from CoreFoundation import CFURLCreateWithFileSystemPath, kCFAllocatorDefault, k
 
 from src.export.file_manager import FileManager
 
+# OCR向け後処理のコントラスト強調係数。淡色の目次を確実に読ませるための調整ノブ。
+_OCR_CONTRAST_FACTOR = 4.0
+
 
 class PdfSplitter:
     """既存PDFの読み込み・分割を行うクラス"""
@@ -75,13 +78,22 @@ class PdfSplitter:
     def render_page_image(
         self, pdf_path: Path, page_index: int, output_path: Path, max_height: int = 2000
     ) -> Path:
-        """PDFページを高解像度PNGとして保存し、そのパスを返す。
+        """PDFページを OCR 向けの高解像度PNGとして保存し、そのパスを返す。
 
-        max_height は OCR 品質を左右する解像度ノブ。
+        max_height は解像度ノブ。淡色（薄いグレー/黄色など）の目次でも
+        claude が確実に読めるよう、グレースケール化してコントラストを
+        強調してから保存する。
         """
+        from PIL import Image, ImageOps, ImageEnhance
+
         pixmap = self.render_page_thumbnail(pdf_path, page_index, max_height=max_height)
         if not pixmap.save(str(output_path), "PNG"):
             raise RuntimeError(f"PDFページ画像の保存に失敗しました: {output_path}")
+        # OCR向けの後処理: グレースケール + コントラスト強調
+        with Image.open(output_path) as im:
+            gray = ImageOps.grayscale(im.convert("RGB"))
+            enhanced = ImageEnhance.Contrast(gray).enhance(_OCR_CONTRAST_FACTOR)
+            enhanced.save(output_path, "PNG")
         return output_path
 
     def split(self, pdf_path: Path, chapters: list, output_dir: Path) -> list[Path]:

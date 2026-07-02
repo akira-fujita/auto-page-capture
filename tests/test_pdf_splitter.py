@@ -129,3 +129,6 @@ def test_render_page_image_writes_readable_png(qapp):
         from PIL import Image
         with Image.open(out) as img:
             assert img.height >= 1000
+            # OCR向けにグレースケール+コントラスト強調されている
+            # (淡色の目次でも claude が読めるように)
+            assert img.mode == "L"
