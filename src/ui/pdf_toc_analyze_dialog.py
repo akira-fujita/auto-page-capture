@@ -115,7 +115,8 @@ class PdfTocAnalyzeDialog(QDialog):
         self.select_all_btn = QPushButton("全選択")
         self.select_none_btn = QPushButton("全解除")
         self.chapter_only_btn.setToolTip(
-            "『N章』の行だけチェックし、部見出し・参考文献・索引などを出力対象から外します。"
+            "章の行（例: 第1章 / 9章 / 序章・終章 / Chapter 1）だけチェックし、"
+            "部見出し・参考文献・索引などを出力対象から外します。"
         )
         self.select_all_btn.setToolTip("すべての行を出力対象にします。")
         self.select_none_btn.setToolTip("すべての行の出力対象を外します。")
