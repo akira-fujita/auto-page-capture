@@ -43,3 +43,27 @@ def test_apply_toc_ranges_replaces_rows(qapp, pdf_path):
     assert dialog._chapter_rows[0].start_spin.value() == 1
     assert dialog._chapter_rows[1].name_edit.text() == "第1章"
     assert dialog._chapter_rows[1].start_spin.value() == 6
+
+
+def test_open_toc_analyze_uses_selected_ranges(qapp, pdf_path, monkeypatch):
+    """解析ダイアログの selected_ranges（章のみ選択後）を反映すること"""
+    class _FakeDialog:
+        result_ranges = [
+            ChapterRange("1章", 0, 4),
+            ChapterRange("第I部", 5, 5),
+            ChapterRange("2章", 6, 9),
+        ]
+        selected_ranges = [ChapterRange("1章", 0, 4), ChapterRange("2章", 6, 9)]
+
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return True
+
+    monkeypatch.setattr(
+        "src.ui.pdf_toc_analyze_dialog.PdfTocAnalyzeDialog", _FakeDialog
+    )
+    dialog = PdfSplitDialog(pdf_path)
+    dialog._open_toc_analyze()
+    assert [r.name_edit.text() for r in dialog._chapter_rows] == ["1章", "2章"]

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from src.export.toc_analyzer import (
-    ClaudeTocEngine, ChapterRange, compute_offset, entries_to_chapters,
+    ClaudeTocEngine, ChapterRange, compute_offset, entries_to_chapters, is_chapter,
 )
 from src.export.pdf_splitter import PdfSplitter
 
@@ -69,8 +69,23 @@ class PdfTocAnalyzeDialog(QDialog):
         layout.addWidget(self.analyze_btn)
 
         self.summary_label = QLabel(); layout.addWidget(self.summary_label)
-        self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["章名", "→ PDFページ範囲"])
+
+        # 出力対象の選別ボタン
+        select_row = QHBoxLayout()
+        self.chapter_only_btn = QPushButton("章のみ")
+        self.select_all_btn = QPushButton("全選択")
+        self.select_none_btn = QPushButton("全解除")
+        self.chapter_only_btn.clicked.connect(self._on_chapter_only)
+        self.select_all_btn.clicked.connect(lambda: self._set_all_checked(True))
+        self.select_none_btn.clicked.connect(lambda: self._set_all_checked(False))
+        for b in (self.chapter_only_btn, self.select_all_btn, self.select_none_btn):
+            select_row.addWidget(b)
+        select_row.addStretch()
+        layout.addLayout(select_row)
+
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["", "章名", "→ PDFページ範囲"])
+        self.table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.table)
         self.warning_label = QLabel(); self.warning_label.setStyleSheet("color:#d32f2f;"); self.warning_label.setWordWrap(True)
         layout.addWidget(self.warning_label)
@@ -157,16 +172,65 @@ class PdfTocAnalyzeDialog(QDialog):
         self.result_ranges = ranges
         self.warnings = warnings
         self._refresh_table()
-        self.apply_btn.setEnabled(bool(ranges))
+
+    @property
+    def selected_ranges(self) -> list[ChapterRange]:
+        """チェックされている行に対応する ChapterRange をテーブル順で返す。"""
+        selected = []
+        for i, c in enumerate(self.result_ranges):
+            item = self.table.item(i, 0)
+            if item is not None and item.checkState() == Qt.CheckState.Checked:
+                selected.append(c)
+        return selected
 
     def _refresh_table(self):
+        # 行を作り直す間は itemChanged が誤発火しないようブロックする
+        self.table.blockSignals(True)
         self.table.setRowCount(len(self.result_ranges))
         for i, c in enumerate(self.result_ranges):
-            self.table.setItem(i, 0, QTableWidgetItem(c.name))
-            self.table.setItem(i, 1, QTableWidgetItem(f"p.{c.start + 1}-{c.end + 1}"))
-        detected = len(self._entries)
-        kept = len(self.result_ranges)
-        self.summary_label.setText(
-            f"目次から {detected} 件検出 → {kept} 章を作成。確定すると既存の章一覧は置き換えられます。"
-        )
+            check = QTableWidgetItem()
+            check.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            check.setCheckState(Qt.CheckState.Checked)  # 解析直後は全チェック
+            self.table.setItem(i, 0, check)
+            self.table.setItem(i, 1, QTableWidgetItem(c.name))
+            self.table.setItem(i, 2, QTableWidgetItem(f"p.{c.start + 1}-{c.end + 1}"))
+        self.table.blockSignals(False)
         self.warning_label.setText("\n".join(self.warnings))
+        self._update_selection_ui()
+
+    def _update_selection_ui(self):
+        """サマリ表示と Apply ボタン活性を選択状態に追従させる。"""
+        detected = len(self._entries)
+        selected = len(self.selected_ranges)
+        self.summary_label.setText(
+            f"目次から {detected} 件検出 → {selected} 章を出力対象。"
+            "確定すると既存の章一覧は置き換えられます。"
+        )
+        self.apply_btn.setEnabled(selected > 0)
+
+    def _on_item_changed(self, _item):
+        self._update_selection_ui()
+
+    def _set_all_checked(self, checked: bool):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self.table.blockSignals(True)
+        for i in range(self.table.rowCount()):
+            self.table.item(i, 0).setCheckState(state)
+        self.table.blockSignals(False)
+        self._update_selection_ui()
+
+    def _on_chapter_only(self):
+        """「章」と判定できる行だけをチェックする。0件一致なら警告して状態維持。"""
+        matches = [i for i, c in enumerate(self.result_ranges) if is_chapter(c.name)]
+        if not matches:
+            QMessageBox.information(
+                self, "章が見つかりません",
+                "章として判定できる見出しがありませんでした。手動で選択してください。",
+            )
+            return
+        self.table.blockSignals(True)
+        for i in range(self.table.rowCount()):
+            state = Qt.CheckState.Checked if i in matches else Qt.CheckState.Unchecked
+            self.table.item(i, 0).setCheckState(state)
+        self.table.blockSignals(False)
+        self._update_selection_ui()

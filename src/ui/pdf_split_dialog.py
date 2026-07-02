@@ -194,8 +194,8 @@ class PdfSplitDialog(QDialog):
         """目次解析ダイアログを開き、確定したら章行を置換"""
         from src.ui.pdf_toc_analyze_dialog import PdfTocAnalyzeDialog
         dialog = PdfTocAnalyzeDialog(self.pdf_path, self.page_count, parent=self)
-        if dialog.exec() and dialog.result_ranges:
-            self._apply_toc_ranges(dialog.result_ranges)
+        if dialog.exec() and dialog.selected_ranges:
+            self._apply_toc_ranges(dialog.selected_ranges)
 
     def _apply_toc_ranges(self, ranges: list[ChapterRange]):
         """解析結果で章行を全置換する（start は0始まり→1始まりの開始ページへ）"""

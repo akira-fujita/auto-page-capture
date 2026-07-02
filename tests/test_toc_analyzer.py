@@ -6,7 +6,7 @@ import pytest
 
 from src.export.toc_analyzer import (
     TocEntry, ChapterRange, compute_offset, entries_to_chapters,
-    _extract_entries, _parse_page, ClaudeTocEngine,
+    _extract_entries, _parse_page, is_chapter, ClaudeTocEngine,
 )
 
 
@@ -101,6 +101,35 @@ def test_parse_page_invalid_raises(raw):
 def test_parse_page_bool_rejected():
     with pytest.raises(ValueError):
         _parse_page(True)
+
+
+@pytest.mark.parametrize("name", [
+    "第1章 はじめの一歩",
+    "1章 シンプリシティへのアプローチ",
+    "１章 全角数字の章",
+    "第一章 漢数字の章",
+    "序章",
+    "終章 まとめ",
+    "9章 おわりに",
+    "Chapter 1 Introduction",
+    "chapter 12",
+])
+def test_is_chapter_true(name):
+    assert is_chapter(name) is True
+
+
+@pytest.mark.parametrize("name", [
+    "第I部 やることとやり方をシンプルにする",
+    "第II部 環境をシンプルにする",
+    "参考文献",
+    "訳者あとがき",
+    "索引",
+    "付録A データ形式",
+    "はじめに",
+    "2024 年の記録",  # 先頭が章でない → 誤検出しない
+])
+def test_is_chapter_false(name):
+    assert is_chapter(name) is False
 
 
 def test_extract_entries_arabic_string_page_becomes_int():

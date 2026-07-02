@@ -35,6 +35,25 @@ class ChapterRange:
     end: int
 
 
+# 「章」に該当する見出しを判定するパターン（先頭一致）。部見出し(第N部)や
+# 巻末項目(参考文献/索引 等)はいずれにも一致しないため自然に非章となる。
+_CHAPTER_PATTERNS = [
+    re.compile(r"^第?\s*[0-9０-９]+\s*章"),            # 第1章 / 1章 / １章
+    re.compile(r"^第?\s*[一二三四五六七八九十百]+\s*章"),  # 第一章
+    re.compile(r"^(序章|終章)"),
+    re.compile(r"^chapter\s+\d+", re.IGNORECASE),      # Chapter 1
+]
+
+
+def is_chapter(name: str) -> bool:
+    """見出し名が「章」かどうかを判定する（部・巻末項目は False）。
+
+    完全な判定ではなく、UI 側で手動チェックにより修正できる前提のヒューリスティック。
+    """
+    s = name.strip()
+    return any(p.match(s) for p in _CHAPTER_PATTERNS)
+
+
 def compute_offset(anchor_capture_no: int, anchor_printed_page: int) -> int:
     """印刷ページ番号→キャプチャ枚数のズレ(offset)を求める。
 
