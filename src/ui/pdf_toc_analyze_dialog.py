@@ -16,6 +16,20 @@ from src.export.toc_analyzer import (
 from src.export.pdf_splitter import PdfSplitter
 
 
+_TOC_HELP_TEXT = (
+    "目次ページを読み取って、章の開始ページを自動入力する機能です。\n\n"
+    "手順:\n"
+    "1. ① 目次のPDFページ範囲 — 目次が載っているPDFのページを指定（両端を含む）。\n"
+    "2. ② ページ番号アンカー — 目次で「1ページ」と書かれた本文が、PDFでは何ページ目か"
+    "を指定。印刷ページとPDFページのズレを1点で補正します。\n"
+    "3. 必要なら「最初の章より前を前付けとして残す」をチェック。\n"
+    "4.「解析する」を押すと、章名とページ範囲の候補が表に出ます"
+    "（前付けのローマ数字ページは自動で別扱い）。\n"
+    "5. 出力したい章だけチェック。「章のみ」で部見出し・参考文献・索引を一括で外せます。\n"
+    "6.「この内容で章を設定」で分割画面に反映します。"
+)
+
+
 class PdfTocAnalyzeDialog(QDialog):
     """既存PDFの目次から章を自動解析するダイアログ"""
 
@@ -36,12 +50,23 @@ class PdfTocAnalyzeDialog(QDialog):
         layout = QVBoxLayout(self)
         n = self.page_count
 
+        # ヘッダ（使い方ボタン）
+        header = QHBoxLayout()
+        header.addStretch()
+        self.help_btn = QPushButton("❓ 使い方")
+        self.help_btn.setToolTip("この画面の使い方（手順）を表示します")
+        self.help_btn.clicked.connect(self._show_help)
+        header.addWidget(self.help_btn)
+        layout.addLayout(header)
+
         # ① 目次ページ範囲(inclusive)
         toc_group = QGroupBox("① 目次のPDFページ範囲(両端を含む)")
         toc_layout = QHBoxLayout(toc_group)
         self.toc_start_spin = QSpinBox(); self.toc_start_spin.setRange(1, max(1, n)); self.toc_start_spin.setPrefix("p.")
         self.toc_end_spin = QSpinBox(); self.toc_end_spin.setRange(1, max(1, n)); self.toc_end_spin.setPrefix("p.")
         self.toc_end_spin.setValue(min(2, n))
+        self.toc_start_spin.setToolTip("目次が載っているPDFの先頭ページ（表紙から数えた実際のページ番号）")
+        self.toc_end_spin.setToolTip("目次が載っているPDFの最終ページ（両端を含む）")
         self.toc_count_label = QLabel()
         toc_layout.addWidget(self.toc_start_spin); toc_layout.addWidget(QLabel("〜"))
         toc_layout.addWidget(self.toc_end_spin); toc_layout.addWidget(self.toc_count_label)
@@ -54,6 +79,14 @@ class PdfTocAnalyzeDialog(QDialog):
         anchor_row = QHBoxLayout()
         self.anchor_printed_spin = QSpinBox(); self.anchor_printed_spin.setRange(1, 99999); self.anchor_printed_spin.setPrefix("印刷 p.")
         self.anchor_pdf_spin = QSpinBox(); self.anchor_pdf_spin.setRange(1, max(1, n)); self.anchor_pdf_spin.setPrefix("PDF #")
+        self.anchor_printed_spin.setToolTip(
+            "本文に『ページ番号』として印刷されている数字（目次に載る番号）。\n"
+            "例: 本文が 1 から始まるなら 1。"
+        )
+        self.anchor_pdf_spin.setToolTip(
+            "上の印刷ページが、PDFでは何ページ目にあたるか。\n"
+            "印刷ページとPDFページのズレをこの1点で補正します。"
+        )
         anchor_row.addWidget(self.anchor_printed_spin); anchor_row.addWidget(QLabel("="))
         anchor_row.addWidget(self.anchor_pdf_spin); anchor_row.addStretch()
         anchor_outer.addLayout(anchor_row)
@@ -62,9 +95,15 @@ class PdfTocAnalyzeDialog(QDialog):
         layout.addWidget(anchor_group)
 
         self.preface_check = QCheckBox("最初の章より前のページを「前付け」として別章に残す")
+        self.preface_check.setToolTip(
+            "最初の章より前（表紙・まえがき等）を『前付け』として1章にまとめて残します。"
+        )
         layout.addWidget(self.preface_check)
 
         self.analyze_btn = QPushButton("解析する")
+        self.analyze_btn.setToolTip(
+            "指定した目次ページを画像化し、claude CLI で章名とページ番号を読み取ります。"
+        )
         self.analyze_btn.clicked.connect(self._run_analyze)
         layout.addWidget(self.analyze_btn)
 
@@ -75,6 +114,11 @@ class PdfTocAnalyzeDialog(QDialog):
         self.chapter_only_btn = QPushButton("章のみ")
         self.select_all_btn = QPushButton("全選択")
         self.select_none_btn = QPushButton("全解除")
+        self.chapter_only_btn.setToolTip(
+            "『N章』の行だけチェックし、部見出し・参考文献・索引などを出力対象から外します。"
+        )
+        self.select_all_btn.setToolTip("すべての行を出力対象にします。")
+        self.select_none_btn.setToolTip("すべての行の出力対象を外します。")
         self.chapter_only_btn.clicked.connect(self._on_chapter_only)
         self.select_all_btn.clicked.connect(lambda: self._set_all_checked(True))
         self.select_none_btn.clicked.connect(lambda: self._set_all_checked(False))
@@ -84,7 +128,8 @@ class PdfTocAnalyzeDialog(QDialog):
         layout.addLayout(select_row)
 
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["", "章名", "→ PDFページ範囲"])
+        self.table.setHorizontalHeaderLabels(["出力", "章名", "→ PDFページ範囲"])
+        self.table.setToolTip("チェックした章だけが出力対象になります。")
         self.table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.table)
         self.warning_label = QLabel(); self.warning_label.setStyleSheet("color:#d32f2f;"); self.warning_label.setWordWrap(True)
@@ -105,6 +150,9 @@ class PdfTocAnalyzeDialog(QDialog):
         self.preface_check.toggled.connect(self._on_preface_toggled)
         self._sync_toc_end_min(self.toc_start_spin.value())
         self._update_labels()
+
+    def _show_help(self):
+        QMessageBox.information(self, "使い方 — 目次から章を自動解析", _TOC_HELP_TEXT)
 
     def _sync_toc_end_min(self, start_value: int):
         self.toc_end_spin.setMinimum(start_value)

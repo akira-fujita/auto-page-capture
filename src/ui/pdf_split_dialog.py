@@ -16,6 +16,19 @@ from src.export.pdf_splitter import PdfSplitter
 from src.export.toc_analyzer import ChapterRange
 
 
+_SPLIT_HELP_TEXT = (
+    "PDFを章ごとに分割する画面です。\n\n"
+    "手順:\n"
+    "1.「目次から章を自動解析」で章の開始ページを自動入力（おすすめ）。"
+    "手動なら「+ 章を追加」。\n"
+    "2. 各行で章名と開始ページを調整。終了ページは次の章の直前まで自動、"
+    "または目次解析で決まった終了ページになります。\n"
+    "3.「出力されないページ」に、どの章にも含まれないページ（前付け・部の扉・"
+    "参考文献・索引など）が出ます。ここに出たページは分割PDFに含まれません。\n"
+    "4. 出力先を確認し「PDFを分割」を実行。章ごとにPDFが書き出されます。"
+)
+
+
 def excluded_page_ranges(spans: list[tuple[int, int]], total_pages: int) -> list[tuple[int, int]]:
     """章に含まれないページ範囲を求める。
 
@@ -56,18 +69,24 @@ class _ChapterRow(QWidget):
         self.name_edit = QLineEdit(name)
         self.name_edit.setPlaceholderText("章名")
         self.name_edit.setMinimumWidth(150)
+        self.name_edit.setToolTip("章名（出力するPDFのファイル名に使われます）")
 
         self.start_spin = QSpinBox()
         self.start_spin.setRange(1, max_page)
         self.start_spin.setValue(start_page)
         self.start_spin.setPrefix("開始: p.")
         self.start_spin.setMinimumWidth(120)
+        self.start_spin.setToolTip(
+            "この章の開始ページ（PDFのページ番号）。\n"
+            "終了ページは次の章の直前まで自動、または目次解析で決まった終了ページ。"
+        )
 
         self.range_label = QLabel()
         self.range_label.setStyleSheet("color: #666; min-width: 100px;")
 
         self.delete_btn = QPushButton("削除")
         self.delete_btn.setFixedWidth(50)
+        self.delete_btn.setToolTip("この章の行を削除します")
 
         layout.addWidget(self.name_edit)
         layout.addWidget(self.start_spin)
@@ -97,17 +116,26 @@ class PdfSplitDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # 説明文
+        # ヘッダ（ファイル情報 ＋ 使い方ボタン）
+        header = QHBoxLayout()
         info = QLabel(
             f"{self.pdf_path.name}  ({self.page_count}ページ)\n"
-            "各章の開始ページを指定してください。終了ページは次の章の直前まで自動計算されます。"
+            "各章の開始ページを指定してください。終了ページは次の章の直前まで自動、"
+            "または目次解析で決まった終了ページになります。"
         )
         info.setStyleSheet("color: #666; margin-bottom: 8px;")
-        layout.addWidget(info)
+        header.addWidget(info)
+        header.addStretch()
+        self.help_btn = QPushButton("❓ 使い方")
+        self.help_btn.setToolTip("この画面の使い方（手順）を表示します")
+        self.help_btn.clicked.connect(self._show_help)
+        header.addWidget(self.help_btn)
+        layout.addLayout(header)
 
-        toc_btn = QPushButton("目次から章を自動解析")
-        toc_btn.clicked.connect(self._open_toc_analyze)
-        layout.addWidget(toc_btn)
+        self.toc_btn = QPushButton("目次から章を自動解析")
+        self.toc_btn.setToolTip("目次ページを解析して、章名と開始ページを自動入力します。")
+        self.toc_btn.clicked.connect(self._open_toc_analyze)
+        layout.addWidget(self.toc_btn)
 
         # 章リスト
         chapter_group = QGroupBox("章一覧")
@@ -128,6 +156,7 @@ class PdfSplitDialog(QDialog):
 
         # 章追加ボタン
         add_btn = QPushButton("+ 章を追加")
+        add_btn.setToolTip("章の行を手動で追加します。")
         add_btn.clicked.connect(self._on_add_chapter)
         chapter_outer.addWidget(add_btn)
 
@@ -144,6 +173,7 @@ class PdfSplitDialog(QDialog):
         output_layout = QHBoxLayout(output_group)
 
         self.output_edit = QLineEdit(str(self.pdf_path.parent))
+        self.output_edit.setToolTip("分割したPDFの出力先フォルダ。実行時にタイムスタンプ付きサブフォルダを作成します。")
         browse_btn = QPushButton("参照...")
         browse_btn.clicked.connect(self._browse_output)
         output_layout.addWidget(self.output_edit)
@@ -159,12 +189,16 @@ class PdfSplitDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 
-        split_btn = QPushButton("PDFを分割")
-        split_btn.clicked.connect(self._do_split)
-        split_btn.setDefault(True)
-        button_layout.addWidget(split_btn)
+        self.split_btn = QPushButton("PDFを分割")
+        self.split_btn.setToolTip("各章を個別のPDFに書き出します。")
+        self.split_btn.clicked.connect(self._do_split)
+        self.split_btn.setDefault(True)
+        button_layout.addWidget(self.split_btn)
 
         layout.addLayout(button_layout)
+
+    def _show_help(self):
+        QMessageBox.information(self, "使い方 — PDF分割", _SPLIT_HELP_TEXT)
 
     def _add_chapter_row(self, name: str, start_page: int, end_page: int | None = None) -> _ChapterRow:
         """章の行を追加。end_page を渡すと終了ページを固定（除外行のギャップ保持用）"""

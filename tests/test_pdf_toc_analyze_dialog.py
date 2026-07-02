@@ -211,6 +211,27 @@ def test_selection_preserved_for_duplicate_names(qapp):
     assert d.table.item(1, 0).checkState() == Qt.CheckState.Checked    # もう一方は維持
 
 
+def test_toc_dialog_key_widgets_have_tooltips(qapp):
+    d, engine, splitter = _dialog([TocEntry("第1章", 1)])
+    assert d.anchor_printed_spin.toolTip()
+    assert d.anchor_pdf_spin.toolTip()
+    assert d.chapter_only_btn.toolTip()
+    assert d.analyze_btn.toolTip()
+
+
+def test_toc_dialog_help_button_shows_usage(qapp, monkeypatch):
+    d, engine, splitter = _dialog([TocEntry("第1章", 1)])
+    shown = []
+    monkeypatch.setattr(
+        "src.ui.pdf_toc_analyze_dialog.QMessageBox.information",
+        lambda *a, **k: shown.append(a),
+    )
+    d.help_btn.click()
+    assert shown, "使い方ダイアログが表示されていない"
+    body = shown[0][2]  # information(parent, title, text)
+    assert "解析" in body and "章のみ" in body
+
+
 def test_preface_check_toggle_triggers_recompute(qapp):
     """FIX 1: preface_check の toggled シグナルが _recompute を呼ぶこと"""
     # offset=10: 第1章 start = 1 + 10 - 1 = 10 > 0 → 前付けが生まれる

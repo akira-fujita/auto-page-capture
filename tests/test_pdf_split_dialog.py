@@ -60,6 +60,26 @@ def test_apply_toc_ranges_replaces_rows(qapp, pdf_path):
     assert dialog._chapter_rows[1].start_spin.value() == 6
 
 
+def test_split_dialog_key_widgets_have_tooltips(qapp, pdf_path):
+    d = PdfSplitDialog(pdf_path)
+    assert d.toc_btn.toolTip()
+    assert d.split_btn.toolTip()
+    assert d._chapter_rows[0].start_spin.toolTip()
+
+
+def test_split_dialog_help_button_shows_usage(qapp, pdf_path, monkeypatch):
+    d = PdfSplitDialog(pdf_path)
+    shown = []
+    monkeypatch.setattr(
+        "src.ui.pdf_split_dialog.QMessageBox.information",
+        lambda *a, **k: shown.append(a),
+    )
+    d.help_btn.click()
+    assert shown, "使い方ダイアログが表示されていない"
+    body = shown[0][2]
+    assert "分割" in body and "出力されない" in body
+
+
 def test_open_toc_analyze_uses_selected_ranges(qapp, pdf_path, monkeypatch):
     """解析ダイアログの selected_ranges（章のみ選択後）を反映すること"""
     class _FakeDialog:
