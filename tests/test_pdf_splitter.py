@@ -115,6 +115,29 @@ def _make_pdf(path: Path, pages: int = 3):
     c.save()
 
 
+def test_enhance_for_ocr_darkens_faint_text():
+    """淡色(薄いグレー)の文字がコントラスト強調で十分暗くなること"""
+    from PIL import Image
+    from src.export.pdf_splitter import _enhance_for_ocr
+
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "faint.png"
+        # ほぼ白地(255)に、薄いグレー(220)の文字ブロックを置いた画像
+        img = Image.new("L", (200, 200), 255)
+        for x in range(20, 60):
+            for y in range(20, 60):
+                img.putpixel((x, y), 220)
+        img.save(p, "PNG")
+
+        _enhance_for_ocr(p)
+
+        with Image.open(p) as out:
+            assert out.mode == "L"
+            # 元は220だった文字ブロックが大幅に暗くなっている
+            block = [out.getpixel((x, y)) for x in range(20, 60) for y in range(20, 60)]
+            assert max(block) < 200
+
+
 def test_render_page_image_writes_readable_png(qapp):
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)

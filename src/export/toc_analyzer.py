@@ -115,13 +115,17 @@ class ClaudeTocEngine:
         # ヘッドレスの claude はワーキングディレクトリ配下のファイルしか
         # 追加許可なしで Read できない。画像の親を cwd にして相対のベース名で
         # 渡すことで /var/folders 等の一時パスでも読めるようにする。
-        workdir = image_paths[0].parent
-        refs = []
-        for p in image_paths:
-            try:
-                refs.append(str(p.relative_to(workdir)))
-            except ValueError:
-                refs.append(str(p))  # 別ディレクトリの画像は絶対パスで
+        # symlink 表記の揺れを吸収するため resolve() で正規化し、
+        # 全画像が同一ディレクトリにあることを要求する（別ディレクトリを
+        # 絶対パスで渡すと再び権限で弾かれ静かに0件になるため明示的に失敗させる）。
+        normalized = [p.resolve() for p in image_paths]
+        parents = {p.parent for p in normalized}
+        if len(parents) != 1:
+            raise RuntimeError(
+                "目次画像は同一ディレクトリに揃える必要があります（claude 解析の制約）"
+            )
+        workdir = normalized[0].parent
+        refs = [p.name for p in normalized]
         prompt = _PROMPT_TEMPLATE.format(paths=", ".join(refs))
         result = subprocess.run(
             ["claude", "-p", "--output-format", "json", prompt],

@@ -15,6 +15,20 @@ from src.export.file_manager import FileManager
 _OCR_CONTRAST_FACTOR = 4.0
 
 
+def _enhance_for_ocr(image_path: Path) -> None:
+    """画像をグレースケール化してコントラストを強調し、その場で上書き保存する。
+
+    淡色（薄いグレー/黄色など）でレンダリングされた目次でも claude が
+    確実に読めるようにするための後処理。
+    """
+    from PIL import Image, ImageOps, ImageEnhance
+
+    with Image.open(image_path) as im:
+        gray = ImageOps.grayscale(im.convert("RGB"))
+        enhanced = ImageEnhance.Contrast(gray).enhance(_OCR_CONTRAST_FACTOR)
+        enhanced.save(image_path, "PNG")
+
+
 class PdfSplitter:
     """既存PDFの読み込み・分割を行うクラス"""
 
@@ -84,16 +98,11 @@ class PdfSplitter:
         claude が確実に読めるよう、グレースケール化してコントラストを
         強調してから保存する。
         """
-        from PIL import Image, ImageOps, ImageEnhance
-
         pixmap = self.render_page_thumbnail(pdf_path, page_index, max_height=max_height)
         if not pixmap.save(str(output_path), "PNG"):
             raise RuntimeError(f"PDFページ画像の保存に失敗しました: {output_path}")
         # OCR向けの後処理: グレースケール + コントラスト強調
-        with Image.open(output_path) as im:
-            gray = ImageOps.grayscale(im.convert("RGB"))
-            enhanced = ImageEnhance.Contrast(gray).enhance(_OCR_CONTRAST_FACTOR)
-            enhanced.save(output_path, "PNG")
+        _enhance_for_ocr(output_path)
         return output_path
 
     def split(self, pdf_path: Path, chapters: list, output_dir: Path) -> list[Path]:

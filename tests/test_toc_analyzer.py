@@ -111,17 +111,33 @@ def test_claude_engine_runs_in_image_dir_with_basenames(monkeypatch):
         return _Result()
 
     monkeypatch.setattr("src.export.toc_analyzer.subprocess.run", fake_run)
-    ClaudeTocEngine().analyze([Path("/var/folders/xx/T/tmpABC/toc_12.png"),
-                               Path("/var/folders/xx/T/tmpABC/toc_13.png")])
+    p1 = Path("/var/folders/xx/T/tmpABC/toc_12.png")
+    p2 = Path("/var/folders/xx/T/tmpABC/toc_13.png")
+    ClaudeTocEngine().analyze([p1, p2])
 
-    assert captured["kwargs"].get("cwd") == "/var/folders/xx/T/tmpABC"
+    # cwd は resolve() 済みの画像ディレクトリ（symlink 正規化を考慮）
+    assert captured["kwargs"].get("cwd") == str(p1.resolve().parent)
     assert captured["kwargs"].get("stdin") == subprocess.DEVNULL
     joined = " ".join(captured["cmd"])
     # 絶対パスではなくベース名で渡っている
     assert "toc_12.png" in joined and "toc_13.png" in joined
-    assert "/var/folders/xx/T/tmpABC/toc_12.png" not in joined
+    assert str(p1.resolve()) not in joined
     # --allowedTools は使わない(可変長引数がプロンプトを食うため)
     assert "--allowedTools" not in captured["cmd"]
+
+
+def test_claude_engine_empty_list_returns_empty():
+    assert ClaudeTocEngine().analyze([]) == []
+
+
+def test_claude_engine_mixed_directories_raises(monkeypatch):
+    """別ディレクトリの画像が混在したら明示的に失敗（静かな0件を防ぐ）"""
+    monkeypatch.setattr(
+        "src.export.toc_analyzer.subprocess.run",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not run")),
+    )
+    with pytest.raises(RuntimeError):
+        ClaudeTocEngine().analyze([Path("/tmp/dirA/a.png"), Path("/tmp/dirB/b.png")])
 
 
 def test_claude_engine_raises_on_nonzero_returncode(monkeypatch):
