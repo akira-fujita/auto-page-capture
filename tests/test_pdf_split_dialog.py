@@ -91,6 +91,14 @@ def test_selected_ranges_preserve_gaps_not_absorbed(qapp, pdf_path, monkeypatch)
     assert (chapters[0].start, chapters[0].end) == (0, 4)
     assert (chapters[1].start, chapters[1].end) == (6, 7)
 
+    # 実分割まで通し、除外ページ(index 5, 8, 9)がどの出力にも含まれないことを確認
+    from pypdf import PdfReader
+    out_dir = pdf_path.parent / "split_out"
+    out_dir.mkdir()
+    outs = dialog.splitter.split(pdf_path, chapters, out_dir)
+    page_counts = [len(PdfReader(str(o)).pages) for o in outs]
+    assert page_counts == [5, 2]  # 0..4=5ページ, 6..7=2ページ（計7 < 全10）
+
 
 def test_editing_start_does_not_cause_overlap(qapp, pdf_path, monkeypatch):
     """TOC由来の start を隣の explicit_end より手前に動かしても重複出力しない"""
