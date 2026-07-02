@@ -1,8 +1,15 @@
 # tests/test_pdf_splitter.py
-import pytest
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
+
+Quartz = pytest.importorskip("Quartz", reason="macOS Quartz not available")
+
+from PyQt6.QtWidgets import QApplication
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from dataclasses import dataclass
 from pypdf import PdfWriter, PdfReader
 
 from src.export.pdf_splitter import PdfSplitter
@@ -13,6 +20,13 @@ class _Chapter:
     name: str
     start: int
     end: int
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    import sys
+    app = QApplication.instance() or QApplication(sys.argv)
+    yield app
 
 
 @pytest.fixture
@@ -91,3 +105,27 @@ def test_split_file_names_have_chapter_number(splitter, sample_pdf):
         paths = splitter.split(sample_pdf, chapters, output_dir)
         assert "chapter_01_" in paths[0].name
         assert "chapter_02_" in paths[1].name
+
+
+def _make_pdf(path: Path, pages: int = 3):
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for i in range(pages):
+        c.drawString(72, 720, f"Page {i + 1}")
+        c.showPage()
+    c.save()
+
+
+def test_render_page_image_writes_readable_png(qapp):
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        pdf = tmp / "sample.pdf"
+        _make_pdf(pdf, pages=3)
+        out = tmp / "toc.png"
+        splitter = PdfSplitter()
+        result = splitter.render_page_image(pdf, page_index=1, output_path=out, max_height=1600)
+        assert result == out
+        assert out.exists()
+        # 高解像度で保存されている(サムネイルより十分大きい)
+        from PIL import Image
+        with Image.open(out) as img:
+            assert img.height >= 1000
