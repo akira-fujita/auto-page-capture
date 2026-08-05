@@ -14,6 +14,9 @@ A macOS desktop tool that automatically captures Kindle app pages and converts t
 - **PDF出力** / **PDF export** — 全ページ結合 or 章ごとに分割してPDF出力 / Export as a single merged PDF or split by chapter
 - **既存PDF分割** / **PDF splitting** — 既存のPDFファイルを章ごとに分割（開始ページ指定・サムネイルプレビュー付き） / Split existing PDF files into chapters with start page configuration and thumbnail preview
 - **デスクトップ通知** / **Desktop notifications** — キャプチャ完了・PDF出力完了時にmacOS通知 / Notifies on capture and export completion
+- **テキスト埋め込み (OCR)** / **Embedded text (OCR)** — macOS Visionで認識したテキストレイヤーをPDFに重ねる（NotebookLMの精度向上） / Overlays a Vision-recognized text layer onto the PDF (improves NotebookLM accuracy)
+- **目次から章を自動解析** / **Auto chapter detection from TOC** — 目次ページを `claude` CLI に解析させ、章名とページ番号から章の区切り（開始ページ）を自動入力。キャプチャフローと既存PDF分割の両方で使え、印刷ページと実ページのズレはアンカー1点（印刷p.X = キャプチャ/PDF #Y）で補正。前付け（ローマ数字ページ）は自動的に別扱い。既存PDF分割では解析結果を行ごとに選別でき、「章のみ」ボタンで部見出しや参考文献・索引を一括除外して**章のPDFだけ**を出力できる（NotebookLM へのアップロードに便利） / Parse the table-of-contents pages via the `claude` CLI to auto-fill chapter start pages. Works in both the capture flow and the existing-PDF split flow; a one-point page anchor (printed p.X = capture/PDF #Y) bridges printed vs actual page numbers. Front matter (roman-numeral pages) is handled separately, and in the PDF-split flow you can select rows individually — the "章のみ" (chapters-only) button excludes part dividers and back matter so you export only the chapter PDFs (handy for uploading to NotebookLM)
+- **章扉から章を検出（目次にページ番号が無い本向け）** / **Chapter-cover detection (for books whose TOC has no page numbers)** — Kindleの画面キャプチャPDFなど、目次にページ番号が印字されていない本では目次解析が使えない。全ページをサムネイル格子（コンタクトシート）にして `claude` CLI に渡し、章扉ページそのものを探して**物理ページを直接**得る。アンカー補正は不要。実行前に確認ダイアログが出る（ページ画像が外部に渡り、Claude の利用枠を消費するため）／進捗表示とキャンセルあり / For books like Kindle screen-capture PDFs whose TOC carries no printed page numbers, TOC analysis cannot work. This mode renders every page into thumbnail contact sheets, sends them to the `claude` CLI, and locates the chapter title pages themselves — yielding physical page numbers directly, with no anchor correction. A confirmation dialog always appears first (page images leave your machine and it consumes your Claude quota); progress and cancel are available
 
 ## 必要環境 / Requirements
 
@@ -40,8 +43,12 @@ pip install -r requirements.txt
 | Pillow | 画像処理 / Image processing |
 | img2pdf | PDF生成 / PDF generation |
 | pypdf | PDF分割 / PDF splitting |
+| reportlab | テキストレイヤー付きPDF生成 / Text-layered PDF generation |
 | pyobjc-framework-Quartz | macOSウィンドウ管理 / macOS window management |
 | pyobjc-framework-Cocoa | macOSアプリ制御 / macOS app control |
+| pyobjc-framework-Vision | macOS OCR / macOS OCR |
+
+> **目次自動解析** は `claude` CLI（Claude Code）がインストール済みで、ネットワーク接続があることを前提とします。従量 API 課金は発生せず、サブスクリプション枠で動作します。
 
 ## 使い方 / Usage
 
@@ -77,6 +84,7 @@ Place `resources/app.png` (1024x1024 recommended) or `resources/app.icns` before
 3. **キャプチャ開始** / **Start capture** — 「キャプチャ開始」をクリック / Click the start button
 4. **章分割（任意）** / **Split chapters (optional)** — キャプチャ完了後、サムネイルをクリックして章を区切る / After capture, click thumbnails to mark chapter boundaries
 5. **PDF出力** / **Export PDF** — 全ページ結合 or 章ごとのPDFを出力 / Export as merged or per-chapter PDFs
+   - デフォルトで「テキストを埋め込む (OCR)」オプションが有効（macOS Visionで認識したテキストレイヤーをPDFに追加） / The "テキストを埋め込む (OCR)" option is enabled by default (adds Vision-recognized text layer to PDF)
 
 ### 既存PDFの分割 / Splitting existing PDFs
 
@@ -84,6 +92,9 @@ Place `resources/app.png` (1024x1024 recommended) or `resources/app.icns` before
 2. PDFファイルを選択 / Select a PDF file
 3. 章ごとに名前と開始ページを設定 / Set chapter names and start pages
 4. 出力先フォルダを指定して「分割実行」 / Choose output folder and click "分割実行"
+
+> 出力先の下に `YYYY-MM-DD_HHMMSS_<元PDF名>/` というサブフォルダが毎回作られ、章ファイルはその中に保存されます（既存ファイルとの衝突を防ぐため）。
+> A subfolder `YYYY-MM-DD_HHMMSS_<source-pdf-name>/` is created under the output folder for each split run; chapter files are saved inside it (to avoid overwriting existing files).
 
 ### 注意事項 / Notes
 
@@ -106,11 +117,17 @@ auto-page-capture/
 │   ├── export/
 │   │   ├── file_manager.py          # ファイル管理 / File management
 │   │   ├── pdf_generator.py         # PDF生成 / PDF generation
-│   │   └── pdf_splitter.py          # PDF分割 / PDF splitting
+│   │   ├── pdf_splitter.py          # PDF分割 / PDF splitting
+│   │   ├── ocr_engine.py            # macOS Vision OCR / OCR engine
+│   │   ├── toc_analyzer.py          # 目次解析（claude CLI） / TOC analysis
+│   │   ├── page_sheet.py            # ページのサムネイル格子画像 / Page contact sheets
+│   │   └── chapter_cover_detector.py # 章扉検出（claude CLI） / Chapter-cover detection
 │   ├── ui/
 │   │   ├── main_window.py           # メインウィンドウ / Main window
 │   │   ├── chapter_dialog.py        # 章分割ダイアログ / Chapter splitting dialog
 │   │   ├── pdf_split_dialog.py      # PDF分割ダイアログ / PDF split dialog
+│   │   ├── toc_analyze_dialog.py    # 目次解析ダイアログ（キャプチャ） / TOC analysis (capture)
+│   │   ├── pdf_toc_analyze_dialog.py # 目次解析・章扉検出ダイアログ（既存PDF） / TOC + cover detection (existing PDF)
 │   │   └── region_selector.py       # 領域選択オーバーレイ / Region selection overlay
 │   └── utils/
 │       └── notification.py          # デスクトップ通知 / Desktop notifications

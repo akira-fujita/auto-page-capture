@@ -37,3 +37,14 @@ class FileManager:
         # ファイル名に使えない文字を置換
         safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in name)
         return output_dir / f"chapter_{index:02d}_{safe_name}.pdf"
+
+    def create_split_output_directory(self, parent_dir: Path, source_name: str) -> Path:
+        """既存PDF分割用のサブフォルダ (timestamp + 元PDF名) を作成
+
+        既存ファイル衝突を避けるため、分割実行ごとに独立したフォルダを返す。
+        """
+        now = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in source_name)
+        output_dir = parent_dir / f"{now}_{safe_name}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir

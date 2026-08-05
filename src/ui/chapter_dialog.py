@@ -8,11 +8,13 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget,
     QLabel, QLineEdit, QPushButton, QCheckBox, QListWidget,
     QListWidgetItem, QFrame, QMessageBox, QGroupBox, QSplitter,
+    QApplication,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from src.export.pdf_generator import PdfGenerator
 from src.export.file_manager import FileManager
+from src.export.toc_analyzer import ChapterRange
 
 
 @dataclass
@@ -151,6 +153,10 @@ class ChapterDialog(QDialog):
         instruction.setStyleSheet("color: #666; margin-bottom: 10px;")
         layout.addWidget(instruction)
 
+        toc_btn = QPushButton("目次から章を自動解析")
+        toc_btn.clicked.connect(self._open_toc_analyze)
+        layout.addWidget(toc_btn)
+
         # メインエリア（スプリッター）
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -221,6 +227,10 @@ class ChapterDialog(QDialog):
         self.chapter_pdf_check = QCheckBox("章ごとにPDFを作成する")
         self.chapter_pdf_check.setChecked(False)
         output_layout.addWidget(self.chapter_pdf_check)
+
+        self.ocr_check = QCheckBox("テキストを埋め込む (OCR)")
+        self.ocr_check.setChecked(True)
+        output_layout.addWidget(self.ocr_check)
 
         right_layout.addWidget(output_group)
 
@@ -371,6 +381,22 @@ class ChapterDialog(QDialog):
         self.name_edit.clear()
         self.delete_btn.setEnabled(False)
 
+    def _open_toc_analyze(self):
+        """目次解析ダイアログを開き、確定したら章を反映"""
+        from src.ui.toc_analyze_dialog import TocAnalyzeDialog
+        dialog = TocAnalyzeDialog(self.image_paths, parent=self)
+        if dialog.exec() and dialog.result_ranges:
+            self._apply_toc_ranges(dialog.result_ranges)
+
+    def _apply_toc_ranges(self, ranges: list[ChapterRange]):
+        """解析結果で章リストを置換して再描画する"""
+        self.chapters = [
+            Chapter(name=r.name, start=r.start, end=r.end) for r in ranges
+        ]
+        self._recalculate_chapter_ranges()
+        self._update_chapter_list()
+        self._update_thumbnails()
+
     def _export_pdfs(self):
         """PDFを出力"""
         if not self.merge_check.isChecked() and not self.chapter_pdf_check.isChecked():
@@ -381,13 +407,15 @@ class ChapterDialog(QDialog):
             )
             return
 
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             exported_files = []
+            ocr = self.ocr_check.isChecked()
 
             # 全ページを1つのPDFにまとめる
             if self.merge_check.isChecked():
                 merged_path = self.output_dir / "merged.pdf"
-                self.pdf_generator.generate(self.image_paths, merged_path)
+                self.pdf_generator.generate(self.image_paths, merged_path, ocr=ocr)
                 exported_files.append(merged_path)
 
             # 章ごとにPDFを作成
@@ -397,7 +425,7 @@ class ChapterDialog(QDialog):
                     pdf_path = self.file_manager.get_chapter_pdf_path(
                         self.output_dir, i + 1, chapter.name
                     )
-                    self.pdf_generator.generate(chapter_images, pdf_path)
+                    self.pdf_generator.generate(chapter_images, pdf_path, ocr=ocr)
                     exported_files.append(pdf_path)
 
             # 元画像を削除
@@ -430,3 +458,6 @@ class ChapterDialog(QDialog):
                 "エラー",
                 f"PDF出力中にエラーが発生しました:\n{str(e)}"
             )
+
+        finally:
+            QApplication.restoreOverrideCursor()
