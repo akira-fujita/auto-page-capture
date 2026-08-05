@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from src.export.toc_analyzer import TocEntry, ChapterRange
 from src.ui.pdf_toc_analyze_dialog import PdfTocAnalyzeDialog
@@ -249,3 +249,361 @@ def test_preface_check_toggle_triggers_recompute(qapp):
     # False に戻す → 前付けが消える
     d.preface_check.setChecked(False)
     assert d.result_ranges[0].name != "前付け"
+
+
+def test_cover_detect_button_exists(qapp):
+    """目次にページ番号が無い本向けに、章扉検出のボタンがある"""
+    d, _, _ = _dialog([])
+    assert hasattr(d, "cover_btn"), "章扉検出ボタンが無い"
+    assert d.cover_btn.toolTip(), "使い方が分かるツールチップが要る"
+
+
+def test_cover_detect_fills_ranges(qapp, monkeypatch):
+    """章扉検出の結果をそのまま章範囲にする（アンカー不要・物理ページ直取り）"""
+    d, _, _ = _dialog([], page_count=211)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        d, "_detect_covers_with_progress",
+        lambda: [("序章", 15), ("第1章", 35), ("第2章", 79)],
+    )
+    d._run_cover_detect()
+
+    assert [(c.name, c.start, c.end) for c in d.result_ranges] == [
+        ("序章", 14, 33),
+        ("第1章", 34, 77),
+        ("第2章", 78, 210),
+    ]
+    assert d.apply_btn.isEnabled()
+    assert d.table.rowCount() == 3
+
+
+def test_cover_result_survives_anchor_change(qapp, monkeypatch):
+    """章扉検出は物理ページ直取りなので、アンカーを動かしても結果を壊さない"""
+    d, _, _ = _dialog([], page_count=211)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        d, "_detect_covers_with_progress", lambda: [("序章", 15), ("第1章", 35)]
+    )
+    d._run_cover_detect()
+    before = [(c.name, c.start, c.end) for c in d.result_ranges]
+
+    d.anchor_printed_spin.setValue(5)
+    d.anchor_pdf_spin.setValue(40)
+
+    assert [(c.name, c.start, c.end) for c in d.result_ranges] == before
+
+
+def test_summary_text_reflects_detection_source(qapp, monkeypatch):
+    """サマリ文言は検出元（目次 / 章扉）に合わせる"""
+    d, _, _ = _dialog([], page_count=211)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        d, "_detect_covers_with_progress", lambda: [("序章", 15), ("第1章", 35)]
+    )
+    d._run_cover_detect()
+    assert "章扉" in d.summary_label.text()
+    assert "2 件" in d.summary_label.text()
+
+
+def test_cover_detect_confirms_and_runs_in_worker(qapp, monkeypatch):
+    """実行前に確認を取り、検出はワーカースレッドで進捗つきで走る"""
+    from PyQt6.QtWidgets import QMessageBox, QProgressDialog
+    import src.ui.pdf_toc_analyze_dialog as mod
+
+    events = []
+
+    class _FakeSignal:
+        def __init__(self):
+            self._slots = []
+
+        def connect(self, slot):
+            self._slots.append(slot)
+
+        def emit(self, *args):
+            for slot in self._slots:
+                slot(*args)
+
+    class FakeWorker:
+        def __init__(self, detect_fn, parent=None):
+            events.append("worker")
+            self.progress = _FakeSignal()
+            self.finished_ok = _FakeSignal()
+            self.failed = _FakeSignal()
+            self.cancelled = _FakeSignal()
+
+        def start(self):
+            self.finished_ok.emit([("序章", 15), ("第1章", 35)])
+
+        def cancel(self):
+            pass
+
+        def is_cancelled(self):
+            return False
+
+        def isRunning(self):
+            return False
+
+        def wait(self):
+            pass
+
+    monkeypatch.setattr(mod, "_CoverDetectWorker", FakeWorker)
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *a, **kw: events.append(("question", a[2])) or QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(QProgressDialog, "exec", lambda self: events.append("progress"))
+    monkeypatch.setattr(QProgressDialog, "close", lambda self: None)
+
+    d, _, _ = _dialog([], page_count=211)
+    d._run_cover_detect()
+
+    kinds = [e[0] if isinstance(e, tuple) else e for e in events]
+    assert kinds == ["question", "worker", "progress"], kinds
+    # 確認文にコスト（利用枠）の明示があること
+    question_text = [e[1] for e in events if isinstance(e, tuple)][0]
+    assert "利用枠" in question_text
+    assert len(d.result_ranges) == 2
+
+
+def test_cover_detect_declined_does_nothing(qapp, monkeypatch):
+    """確認で「いいえ」なら検出せず、既存の状態を変えない"""
+    from PyQt6.QtWidgets import QMessageBox
+
+    called = []
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.No
+    )
+    d, _, _ = _dialog([], page_count=211)
+    monkeypatch.setattr(
+        d, "_detect_chapter_covers", lambda: called.append("detect") or []
+    )
+    d._run_cover_detect()
+    assert called == []
+    assert d.result_ranges == []
+
+
+def test_text_detect_button_fills_ranges_without_claude(qapp, monkeypatch):
+    """claude を使わないテキスト検出でも章範囲を埋められる"""
+    from src.export.pdf_splitter import DetectionResult
+
+    d, _, _ = _dialog([], page_count=100)
+    assert hasattr(d, "text_btn"), "テキスト検出ボタンが無い"
+    monkeypatch.setattr(
+        d.splitter, "detect_chapters_auto",
+        lambda path: DetectionResult([("第1章", 10), ("第2章", 40)], "heading", True),
+        raising=False,
+    )
+    d._run_text_detect()
+
+    assert [(c.name, c.start, c.end) for c in d.result_ranges] == [
+        ("第1章", 9, 38),
+        ("第2章", 39, 99),
+    ]
+    assert "本文見出し" in d.summary_label.text()
+
+
+def test_text_detect_printed_toc_pages_go_through_anchor(qapp, monkeypatch):
+    """目次の印字ページはアンカー補正を通す（物理ページ扱いにしない）"""
+    from src.export.pdf_splitter import DetectionResult
+
+    d, _, _ = _dialog([], page_count=100)
+    d.anchor_printed_spin.setValue(1)
+    d.anchor_pdf_spin.setValue(11)  # 印刷 p.1 = PDF 11ページ目（offset +10）
+    monkeypatch.setattr(
+        d.splitter, "detect_chapters_auto",
+        lambda path: DetectionResult([("第1章", 1), ("第2章", 30)], "toc", True),
+        raising=False,
+    )
+    d._run_text_detect()
+
+    # 印刷 p.1 → PDF 11ページ目 = index 10
+    assert [(c.name, c.start) for c in d.result_ranges] == [("第1章", 10), ("第2章", 39)]
+
+
+def test_cover_detect_cancel_is_not_reported_as_not_found(qapp, monkeypatch):
+    """キャンセル時は「章扉が見つかりません」と誤報しない"""
+    from PyQt6.QtWidgets import QMessageBox, QProgressDialog
+    import src.ui.pdf_toc_analyze_dialog as mod
+
+    messages = []
+
+    class _FakeSignal:
+        def __init__(self):
+            self._slots = []
+
+        def connect(self, slot):
+            self._slots.append(slot)
+
+        def emit(self, *args):
+            for slot in self._slots:
+                slot(*args)
+
+    class CancelledWorker:
+        def __init__(self, detect_fn, parent=None):
+            self.progress = _FakeSignal()
+            self.finished_ok = _FakeSignal()
+            self.failed = _FakeSignal()
+            self.cancelled = _FakeSignal()
+
+        def start(self):
+            self.cancelled.emit()
+
+        def cancel(self):
+            pass
+
+        def is_cancelled(self):
+            return True
+
+        def isRunning(self):
+            return False
+
+        def wait(self):
+            pass
+
+    monkeypatch.setattr(mod, "_CoverDetectWorker", CancelledWorker)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **kw: messages.append(a[1:3]))
+    monkeypatch.setattr(QProgressDialog, "exec", lambda self: None)
+    monkeypatch.setattr(QProgressDialog, "close", lambda self: None)
+
+    d, _, _ = _dialog([], page_count=211)
+    d._run_cover_detect()
+
+    assert messages == [], f"キャンセル時に余計なメッセージを出さない: {messages}"
+
+
+def test_preface_toggle_rebuilds_after_page_detection(qapp, monkeypatch):
+    """章扉/テキスト検出のあとでも「前付け」チェックが効く"""
+    d, _, _ = _dialog([], page_count=100)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        d, "_detect_covers_with_progress", lambda: [("第1章", 10), ("第2章", 40)]
+    )
+    d._run_cover_detect()
+    assert [c.name for c in d.result_ranges] == ["第1章", "第2章"]
+
+    d.preface_check.setChecked(True)
+    assert [c.name for c in d.result_ranges] == ["前付け", "第1章", "第2章"]
+    assert d.result_ranges[0].start == 0 and d.result_ranges[0].end == 8
+
+    d.preface_check.setChecked(False)
+    assert [c.name for c in d.result_ranges] == ["第1章", "第2章"]
+
+
+def test_reset_state_clears_detection_mode(qapp, monkeypatch):
+    """目次解析の失敗で状態を戻したら、前の検出元の表示は残さない"""
+    d, _, _ = _dialog([], page_count=100)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        d, "_detect_covers_with_progress", lambda: [("第1章", 10), ("第2章", 40)]
+    )
+    d._run_cover_detect()
+    assert "章扉" in d.summary_label.text()
+
+    d._reset_state()
+    assert "章扉" not in d.summary_label.text()
+
+
+def test_detected_count_excludes_preface_row(qapp, monkeypatch):
+    """前付け行は検出件数に数えない"""
+    d, _, _ = _dialog([], page_count=100)
+    d.preface_check.setChecked(True)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(
+        d, "_detect_covers_with_progress", lambda: [("第1章", 10), ("第2章", 40)]
+    )
+    d._run_cover_detect()
+    assert len(d.result_ranges) == 3  # 前付け + 2章
+    assert "2 件検出" in d.summary_label.text(), d.summary_label.text()
+
+
+def test_worker_runs_off_gui_thread_and_cancels(qapp):
+    """実 QThread で: GUIスレッド外で動き、キャンセルが伝わる"""
+    import threading
+    import time
+    from PyQt6.QtCore import QEventLoop, QTimer
+    from src.ui.pdf_toc_analyze_dialog import _CoverDetectWorker, _CoverDetectCancelled
+
+    gui_thread = threading.current_thread().ident
+    observed = {}
+    started = threading.Event()
+
+    def slow_detect():
+        observed["thread"] = threading.current_thread().ident
+        started.set()
+        # キャンセル要求が来るまで待ち、来たら打ち切る
+        for _ in range(200):
+            if worker.is_cancelled():
+                raise _CoverDetectCancelled()
+            time.sleep(0.01)
+        return [("第1章", 10)]
+
+    worker = _CoverDetectWorker(slow_detect)
+    loop = QEventLoop()
+    outcome = {}
+    worker.cancelled.connect(lambda: (outcome.update(cancelled=True), loop.quit()))
+    worker.finished_ok.connect(lambda c: (outcome.update(covers=c), loop.quit()))
+    worker.failed.connect(lambda m: (outcome.update(error=m), loop.quit()))
+
+    worker.start()
+    assert started.wait(5), "ワーカーが動き出さない"
+    QTimer.singleShot(0, worker.cancel)
+    QTimer.singleShot(5000, loop.quit)  # 保険
+    loop.exec()
+    worker.wait()
+
+    assert observed["thread"] != gui_thread, "GUIスレッドで実行されている"
+    assert outcome.get("cancelled") is True, outcome
+
+
+def test_cover_detect_failure_shows_single_message(qapp, monkeypatch):
+    """失敗時にエラーと「見つかりません」を二重に出さない"""
+    from PyQt6.QtWidgets import QProgressDialog
+    import src.ui.pdf_toc_analyze_dialog as mod
+
+    shown = []
+
+    class _FakeSignal:
+        def __init__(self):
+            self._slots = []
+
+        def connect(self, slot):
+            self._slots.append(slot)
+
+        def emit(self, *args):
+            for slot in self._slots:
+                slot(*args)
+
+    class FailingWorker:
+        def __init__(self, detect_fn, parent=None):
+            self.progress = _FakeSignal()
+            self.finished_ok = _FakeSignal()
+            self.failed = _FakeSignal()
+            self.cancelled = _FakeSignal()
+
+        def start(self):
+            self.failed.emit("claude CLI が見つかりません。")
+
+        def cancel(self):
+            pass
+
+        def is_cancelled(self):
+            return False
+
+        def isRunning(self):
+            return False
+
+        def wait(self):
+            pass
+
+    monkeypatch.setattr(mod, "_CoverDetectWorker", FailingWorker)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **kw: shown.append(("critical", a[1])))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **kw: shown.append(("info", a[1])))
+    monkeypatch.setattr(QProgressDialog, "exec", lambda self: None)
+    monkeypatch.setattr(QProgressDialog, "close", lambda self: None)
+
+    d, _, _ = _dialog([], page_count=211)
+    d._run_cover_detect()
+
+    assert [kind for kind, _ in shown] == ["critical"], shown

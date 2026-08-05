@@ -6,12 +6,12 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QCheckBox,
     QPushButton, QGroupBox, QTableWidget, QTableWidgetItem,
-    QMessageBox, QApplication,
+    QMessageBox, QApplication, QProgressDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 from src.export.toc_analyzer import (
-    ClaudeTocEngine, ChapterRange, compute_offset, entries_to_chapters, is_chapter,
+    ClaudeTocEngine, ChapterRange, TocEntry, compute_offset, entries_to_chapters, is_chapter,
 )
 from src.export.pdf_splitter import PdfSplitter
 
@@ -30,6 +30,53 @@ _TOC_HELP_TEXT = (
 )
 
 
+class _CoverDetectCancelled(Exception):
+    """章扉検出のキャンセル"""
+
+
+class _CoverDetectWorker(QThread):
+    """章扉検出をUIスレッドの外で実行する
+
+    claude CLI の呼び出しは1回あたり数十秒かかるため、メインスレッドで走らせると
+    ダイアログが応答不能になる。進捗はシグナルで通知し、キャンセルも受け付ける。
+    """
+
+    progress = pyqtSignal(str)
+    finished_ok = pyqtSignal(list)
+    failed = pyqtSignal(str)
+    cancelled = pyqtSignal()
+
+    def __init__(self, detect_fn, parent=None):
+        super().__init__(parent)
+        self._detect_fn = detect_fn
+        self._cancelled = False
+
+    def cancel(self):
+        """キャンセルを要求する（進行中のCLI呼び出しの完了後に停止する）"""
+        self._cancelled = True
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled
+
+    def run(self):
+        from src.export.page_sheet import SheetCancelled  # noqa: F401  (except節で使う)
+
+        self.progress.emit("ページ画像の準備を開始しました…")
+        try:
+            covers = self._detect_fn()
+            if self._cancelled:
+                self.cancelled.emit()
+            else:
+                self.finished_ok.emit(covers)
+        except (_CoverDetectCancelled, SheetCancelled):
+            self.cancelled.emit()
+        except Exception as e:
+            if self._cancelled:
+                self.cancelled.emit()
+            else:
+                self.failed.emit(str(e))
+
+
 class PdfTocAnalyzeDialog(QDialog):
     """既存PDFの目次から章を自動解析するダイアログ"""
 
@@ -40,6 +87,9 @@ class PdfTocAnalyzeDialog(QDialog):
         self.engine = engine or ClaudeTocEngine()
         self.splitter = splitter or PdfSplitter()
         self._entries = []
+        self._mode = "toc"
+        self._detected_pages: list[tuple[str, int]] = []
+        self._source_label_text = ""
         self.result_ranges = []
         self.warnings = []
         self._init_ui()
@@ -106,6 +156,26 @@ class PdfTocAnalyzeDialog(QDialog):
         )
         self.analyze_btn.clicked.connect(self._run_analyze)
         layout.addWidget(self.analyze_btn)
+
+        # claude を使わない検出（しおり・本文テキスト）。無料なのでまずこれを試せる
+        self.text_btn = QPushButton("テキストから検出（claude を使わない・無料）")
+        self.text_btn.setToolTip(
+            "PDFのしおり（ブックマーク）や本文の章見出しテキストから章を検出します。\n"
+            "claude を呼ばないので利用枠を消費しません。①②の指定は不要です。\n"
+            "文字情報を持たないPDF（スキャン・画面キャプチャ）では使えません。"
+        )
+        self.text_btn.clicked.connect(self._run_text_detect)
+        layout.addWidget(self.text_btn)
+
+        # 目次にページ番号が印字されていない本（Kindleの画面キャプチャ等）向け
+        self.cover_btn = QPushButton("目次にページ番号が無い本（章扉を全ページから検出）")
+        self.cover_btn.setToolTip(
+            "目次にページ番号が載っていない本向け。全ページをサムネイル化して"
+            "章扉ページそのものを探すため、①②の指定は不要です。\n"
+            "ページ画像を claude CLI に送るので、Claude の利用枠を消費します。"
+        )
+        self.cover_btn.clicked.connect(self._run_cover_detect)
+        layout.addWidget(self.cover_btn)
 
         self.summary_label = QLabel(); layout.addWidget(self.summary_label)
 
@@ -174,6 +244,12 @@ class PdfTocAnalyzeDialog(QDialog):
             self._recompute(reset_selection=False)
 
     def _on_preface_toggled(self, _checked: bool):
+        if self._mode in ("cover", "text") and self._detected_pages:
+            # 物理ページ直取りの結果は保持した検出ページから組み直す
+            self._apply_detected_pages(
+                self._detected_pages, self._mode, self._source_label_text
+            )
+            return
         if self._entries:
             self._recompute(reset_selection=False)
 
@@ -193,6 +269,7 @@ class PdfTocAnalyzeDialog(QDialog):
                     self.splitter.render_page_image(self.pdf_path, idx, out)
                     paths.append(out)
                 self._entries = self.engine.analyze(paths)
+                self._mode = "toc"
         except FileNotFoundError:
             self._reset_state()
             QMessageBox.critical(self, "エラー", "claude CLI が見つかりませんでした。手動でページを入力してください。")
@@ -205,8 +282,262 @@ class PdfTocAnalyzeDialog(QDialog):
             QApplication.restoreOverrideCursor()
         self._recompute()
 
+    # --- テキストから検出（claude を使わない） -------------------------------
+
+    _TEXT_SOURCE_LABELS = {
+        "bookmark": "しおり",
+        "heading": "本文見出し",
+    }
+
+    def _run_text_detect(self):
+        """しおり・本文テキストから章を検出して表に出す"""
+        try:
+            result = self.splitter.detect_chapters_auto(self.pdf_path)
+        except Exception as e:
+            QMessageBox.critical(
+                self, "エラー",
+                f"テキストからの検出に失敗しました:\n{e}\n\n手動でページを入力してください。",
+            )
+            return
+
+        if not result.has_text_layer:
+            QMessageBox.information(
+                self, "テキストがありません",
+                "このPDFは文字情報を含まないため、テキストからは検出できません。\n"
+                "（スキャンや画面キャプチャのPDFの可能性があります）\n"
+                "「章扉を全ページから検出」をお試しください。",
+            )
+            return
+
+        if not result.chapters:
+            QMessageBox.information(
+                self, "章が見つかりません",
+                "しおりからも本文テキストからも章を検出できませんでした。\n"
+                "目次解析か章扉検出をお試しください。",
+            )
+            return
+
+        if result.source == "toc":
+            # 目次の印字ページは物理ページではないので、既存のアンカー補正を通す
+            self._entries = [
+                TocEntry(name=name, printed_page=page) for name, page in result.chapters
+            ]
+            self._mode = "toc"
+            self._recompute()
+            QMessageBox.information(
+                self, "目次の印字ページを使いました",
+                "本文の章見出しが見つからなかったため、目次に印字されたページ番号を"
+                "使いました。\n"
+                "②のアンカー（印刷ページ = PDFページ）が正しいか確認してください。",
+            )
+            return
+
+        chapters = self._validate_covers(result.chapters)
+        if not chapters:
+            QMessageBox.information(
+                self, "章が見つかりません",
+                "検出したページがPDFの範囲外でした。手動でページを入力してください。",
+            )
+            return
+
+        self._apply_detected_pages(
+            chapters, mode="text",
+            source_label=self._TEXT_SOURCE_LABELS.get(result.source, "テキスト"),
+        )
+
+    # --- 章扉から検出（目次にページ番号が無い本向け） -----------------------
+
+    def _detect_chapter_covers(self) -> list[tuple[str, int]]:
+        """全ページのサムネイルから章扉ページを検出する（2パス）
+
+        1パス目: コンタクトシートから章扉ページを見つける
+        2パス目: そのページだけ拡大し、本当に章扉かの検証と章名の書き写しをする
+        """
+        from src.export import chapter_cover_detector as detector
+        from src.export.page_sheet import build_contact_sheet, SheetCancelled
+
+        with tempfile.TemporaryDirectory(prefix="chapter_covers_") as tmpdir:
+            def notify(message: str):
+                callback = getattr(self, "_progress_callback", None)
+                if callback:
+                    callback(message)
+
+            def raise_if_cancelled():
+                check = getattr(self, "_cancel_check", None)
+                if check and check():
+                    raise _CoverDetectCancelled()
+
+            def cancel_check() -> bool:
+                check = getattr(self, "_cancel_check", None)
+                return bool(check and check())
+
+            def sheet_builder(pages: list[int], out_path: str) -> str:
+                raise_if_cancelled()
+                notify(f"ページ画像を作成中… (p.{pages[0]}-{pages[-1]})")
+                return build_contact_sheet(
+                    self.pdf_path, pages, Path(out_path), is_cancelled=cancel_check
+                )
+
+            def title_sheet_builder(pages: list[int], out_path: str) -> str:
+                raise_if_cancelled()
+                notify("章名を読み取り中…")
+                # 章名を読み取るため拡大して並べる
+                return build_contact_sheet(
+                    self.pdf_path, pages, Path(out_path),
+                    columns=2, thumb_width=600, thumb_height=800,
+                    is_cancelled=cancel_check,
+                )
+
+            def runner(prompt: str, image_path: str) -> str:
+                raise_if_cancelled()
+                notify("claude が画像を読み取っています…")
+                check = getattr(self, "_cancel_check", None)
+                return detector.run_claude_cli(
+                    prompt, image_path, is_cancelled=check
+                )
+
+            covers = detector.detect_chapters_from_images(
+                page_count=self.page_count,
+                output_dir=tmpdir,
+                runner=runner,
+                sheet_builder=sheet_builder,
+            )
+            if not covers:
+                return []
+            return detector.refine_chapter_names(
+                covers,
+                output_dir=tmpdir,
+                runner=runner,
+                sheet_builder=title_sheet_builder,
+            )
+
+    def _run_cover_detect(self):
+        """章扉検出を実行し、結果を章範囲として表に出す"""
+        # ページ画像が外部（Claude）に渡り、利用枠も消費するので必ず確認する
+        answer = QMessageBox.question(
+            self, "章扉から検出",
+            f"全 {self.page_count} ページをサムネイル化して claude CLI に送り、"
+            "章扉ページを探します。\n"
+            "Claude の利用枠を消費し、数分かかることがあります。実行しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._cover_aborted = False
+        covers = self._detect_covers_with_progress()
+        if self._cover_aborted:
+            # キャンセル・失敗は検出側で伝えているので何も出さない
+            return
+        covers = self._validate_covers(covers)
+        if not covers:
+            QMessageBox.information(
+                self, "章扉が見つかりません",
+                "ページ画像から章扉を検出できませんでした。\n"
+                "手動でページを入力してください。",
+            )
+            return
+
+        self._apply_detected_pages(covers, mode="cover", source_label="章扉")
+
+    def _detect_covers_with_progress(self) -> list[tuple[str, int]]:
+        """ワーカースレッドで検出し、進捗ダイアログで待つ"""
+        worker = _CoverDetectWorker(self._detect_chapter_covers, self)
+        self._progress_callback = worker.progress.emit
+        self._cancel_check = worker.is_cancelled
+
+        progress = QProgressDialog(
+            "ページ画像から章扉を検出しています…", "キャンセル", 0, 0, self
+        )
+        progress.setWindowTitle("章扉から検出")
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+
+        outcome: dict = {}
+
+        def on_finished(covers):
+            outcome["covers"] = covers
+            progress.close()
+
+        def on_failed(message: str):
+            outcome["error"] = message
+            progress.close()
+
+        def on_cancelled():
+            outcome["cancelled"] = True
+            progress.close()
+
+        worker.progress.connect(progress.setLabelText)
+        worker.finished_ok.connect(on_finished)
+        worker.failed.connect(on_failed)
+        worker.cancelled.connect(on_cancelled)
+        progress.canceled.connect(worker.cancel)
+
+        worker.start()
+        progress.exec()
+
+        # キャンセル時も進行中のCLI呼び出しの終了を待ってから片付ける
+        if worker.isRunning():
+            worker.cancel()
+            worker.wait()
+
+        if outcome.get("cancelled") or worker.is_cancelled():
+            self._cover_aborted = True
+            return []
+        if "error" in outcome:
+            # ここでエラーを伝えたので、呼び出し側では追加のメッセージを出さない
+            self._cover_aborted = True
+            QMessageBox.critical(
+                self, "エラー",
+                f"章扉の検出に失敗しました:\n{outcome['error']}\n\n"
+                "手動でページを入力してください。",
+            )
+            return []
+        return outcome.get("covers") or []
+
+    def _apply_detected_pages(
+        self, chapters: list[tuple[str, int]], mode: str, source_label: str
+    ):
+        """物理ページ直取りの検出結果（章扉・テキスト）を章範囲にして表に出す"""
+        # 前付けトグルで組み直せるよう、検出結果そのものを保持する
+        self._detected_pages = list(chapters)
+        ranges = []
+        for i, (name, page) in enumerate(chapters):
+            start = page - 1  # 0始まり
+            end = (chapters[i + 1][1] - 2) if i + 1 < len(chapters) else self.page_count - 1
+            ranges.append(ChapterRange(name, start, end))
+
+        if self.preface_check.isChecked() and ranges and ranges[0].start > 0:
+            ranges = [ChapterRange("前付け", 0, ranges[0].start - 1)] + ranges
+
+        # 目次解析の再計算（アンカー変更等）でこの結果を壊さないようにする
+        self._entries = []
+        self._mode = mode
+        self._source_label_text = source_label
+        self.result_ranges = ranges
+        self.warnings = []
+        self._refresh_table()
+
+    def _validate_covers(self, covers: list[tuple[str, int]]) -> list[tuple[str, int]]:
+        """検出ページを検証する（範囲内・厳密増加・重複なし）"""
+        valid: list[tuple[str, int]] = []
+        last_page = 0
+        for name, page in sorted(covers, key=lambda c: c[1]):
+            if not isinstance(page, int) or not 1 <= page <= self.page_count:
+                continue
+            if page <= last_page:
+                continue
+            valid.append((name.strip() or f"章扉 p.{page}", page))
+            last_page = page
+        return valid
+
     def _reset_state(self):
         self._entries = []
+        self._mode = "toc"
+        self._detected_pages = []
+        self._source_label_text = ""
         self.result_ranges = []
         self.warnings = []
         self._refresh_table()
@@ -269,10 +600,15 @@ class PdfTocAnalyzeDialog(QDialog):
 
     def _update_selection_ui(self):
         """サマリ表示と Apply ボタン活性を選択状態に追従させる。"""
-        detected = len(self._entries)
         selected = len(self.selected_ranges)
+        if self._mode in ("cover", "text"):
+            label = self._source_label_text or "章扉"
+            # 前付けは検出結果ではないので件数に含めない
+            source, detected = f"{label}から", len(self._detected_pages)
+        else:
+            source, detected = "目次から", len(self._entries)
         self.summary_label.setText(
-            f"目次から {detected} 件検出 → {selected} 章を出力対象。"
+            f"{source} {detected} 件検出 → {selected} 章を出力対象。"
             "確定すると既存の章一覧は置き換えられます。"
         )
         self.apply_btn.setEnabled(selected > 0)

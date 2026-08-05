@@ -1,7 +1,9 @@
 # src/export/pdf_splitter.py
 """既存PDFの読み込み・サムネイルレンダリング・章分割"""
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pypdf import PdfReader, PdfWriter
 from PyQt6.QtGui import QImage, QPixmap
@@ -10,6 +12,7 @@ import Quartz
 from CoreFoundation import CFURLCreateWithFileSystemPath, kCFAllocatorDefault, kCFURLPOSIXPathStyle
 
 from src.export.file_manager import FileManager
+from src.export.toc_detector import detect_chapters_from_text, has_text_layer
 
 # OCR向け後処理のコントラスト強調係数。淡色の目次を確実に読ませるための調整ノブ。
 _OCR_CONTRAST_FACTOR = 4.0
@@ -29,11 +32,79 @@ def _enhance_for_ocr(image_path: Path) -> None:
         enhanced.save(image_path, "PNG")
 
 
+@dataclass(frozen=True)
+class DetectionResult:
+    """claude を使わない章検出の結果
+
+    chapters: (章名, 開始ページ 1-indexed) のリスト
+    source: "bookmark"=しおり / "heading"=本文見出し / "toc"=目次の印字ページ / "none"=検出なし
+    has_text_layer: PDF がテキスト層を持つか（False はスキャン PDF の可能性）
+    """
+
+    chapters: list[tuple[str, int]]
+    source: Literal["bookmark", "heading", "toc", "none"]
+    has_text_layer: bool
+
+
 class PdfSplitter:
     """既存PDFの読み込み・分割を行うクラス"""
 
     def __init__(self):
         self.file_manager = FileManager()
+
+    def detect_bookmark_chapters(self, pdf_path: Path) -> list[tuple[str, int]]:
+        """PDFのブックマーク（アウトライン）から章情報を取得
+
+        Returns:
+            (章名, 開始ページ番号(1-indexed)) のリスト。ページ番号順。
+            検出できない場合は空リスト。
+        """
+        reader = PdfReader(str(pdf_path))
+        outlines = reader.outline
+        if not outlines:
+            return []
+
+        chapters = []
+        for item in outlines:
+            # ネストされたブックマーク（リスト）はスキップ（トップレベルのみ）
+            if isinstance(item, list):
+                continue
+            title = str(item.get("/Title", "")).strip()
+            if not title:
+                continue
+            page_num = reader.get_destination_page_number(item)
+            chapters.append((title, page_num + 1))  # 1-indexed
+
+        chapters.sort(key=lambda c: c[1])
+        return chapters
+
+    def extract_page_texts(self, pdf_path: Path) -> list[str]:
+        """各ページのテキストを取得（index 0 が p.1）
+
+        テキストを持たないページや抽出に失敗したページは空文字にする。
+        """
+        reader = PdfReader(str(pdf_path))
+        texts = []
+        for page in reader.pages:
+            try:
+                text = page.extract_text() or ""
+            except Exception:
+                text = ""
+            texts.append(text)
+        return texts
+
+    def detect_chapters_auto(self, pdf_path: Path) -> DetectionResult:
+        """claude を使わずに章を検出する（ブックマーク優先、無ければ本文テキスト）"""
+        bookmarks = self.detect_bookmark_chapters(pdf_path)
+        if bookmarks:
+            return DetectionResult(bookmarks, "bookmark", True)
+
+        page_texts = self.extract_page_texts(pdf_path)
+        if not has_text_layer(page_texts):
+            return DetectionResult([], "none", False)
+
+        text_result = detect_chapters_from_text(page_texts)
+        return DetectionResult(text_result.chapters, text_result.source, True)
 
     def get_page_count(self, pdf_path: Path) -> int:
         """PDFのページ数を取得"""

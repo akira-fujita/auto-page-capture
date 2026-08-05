@@ -155,3 +155,28 @@ def test_render_page_image_writes_readable_png(qapp):
             # OCR向けにグレースケール+コントラスト強調されている
             # (淡色の目次でも claude が読めるように)
             assert img.mode == "L"
+
+
+def test_detect_chapters_auto_prefers_bookmarks_then_text(splitter, sample_pdf, monkeypatch):
+    """claude を使わない検出: ブックマーク優先、無ければ本文テキスト"""
+    monkeypatch.setattr(
+        splitter, "detect_bookmark_chapters", lambda path: [("第1章", 1), ("第2章", 3)]
+    )
+    result = splitter.detect_chapters_auto(sample_pdf)
+    assert result.source == "bookmark"
+    assert result.chapters == [("第1章", 1), ("第2章", 3)]
+    assert result.has_text_layer is True
+
+    monkeypatch.setattr(splitter, "detect_bookmark_chapters", lambda path: [])
+    monkeypatch.setattr(
+        splitter, "extract_page_texts",
+        lambda path: ["表紙", "第1章 はじめに", "本文" * 50, "第2章 設計", "本文" * 50],
+    )
+    text_result = splitter.detect_chapters_auto(sample_pdf)
+    assert text_result.source == "heading"
+    assert text_result.chapters == [("第1章 はじめに", 2), ("第2章 設計", 4)]
+
+    monkeypatch.setattr(splitter, "extract_page_texts", lambda path: ["", "", "", "", ""])
+    scanned = splitter.detect_chapters_auto(sample_pdf)
+    assert scanned.has_text_layer is False
+    assert scanned.source == "none"
