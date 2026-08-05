@@ -5,4 +5,5 @@ __pycache__/
 dist/
 .DS_Store
 venv/
-.DS_Store
+.claude/settings.local.json
+.claude/tdd-guard/
